@@ -23,6 +23,7 @@
 #include "touch_button.h"
 #endif
 #include "esp32_camera.h"
+#include "servos/servo_controller.h"
 #define TAG "CompactWifiBoardLCD"
 
 #if CONFIG_LCD_GC9A01_240X240
@@ -317,6 +318,7 @@ public:
 
         // InitializePowerSaveTimer();
         InitializeCamera();
+        InitializeServoController();
         audio_codec.OnWakeUp([this](const std::string &command)
                              {
             if (command == std::string(vb6824_get_wakeup_word())){
