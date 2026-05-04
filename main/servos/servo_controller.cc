@@ -10,12 +10,18 @@
 #include <freertos/queue.h>
 
 #include <algorithm>
+#include <cmath>
 #include <thread>
 #include <vector>
 
 static const char* TAG = "ServoController";
 
-// GPIO 11,12,13,14 -> channels 1,2,3,4
+// Servo mapping (verified):
+//   servo[0] = GPIO11, ch1 = 右脚: 60°=脚尖抬起, 90°=平放, 120°=脚尖压下
+//   servo[1] = GPIO12, ch2 = 右腿: 60°=内旋, 90°=中立, 120°=外旋展髋
+//   servo[2] = GPIO13, ch3 = 左腿: 60°=外旋展髋, 90°=中立, 120°=内旋
+//   servo[3] = GPIO14, ch4 = 左脚: 60°=脚尖压下, 90°=平放, 120°=脚尖抬起
+//   Note: 左腿/左脚与右腿/右脚的角度方向相反
 static const int kServoGpios[4] = {11, 12, 13, 14};
 static const ledc_channel_t kServoChannels[4] = {LEDC_CHANNEL_1, LEDC_CHANNEL_2, LEDC_CHANNEL_3, LEDC_CHANNEL_4};
 
@@ -58,32 +64,64 @@ private:
         }
     }
 
+    // Otto-style walk (from OttoDIYLib).
+    // Otto servo order: 0=LL, 1=RL, 2=LF, 3=RF
+    // Ours:              0=RF, 1=RL, 2=LL, 3=LF
+    //
+    // A[4] = {30, 30, 20, 20}  — legs amp 30, feet amp 20
+    // O[4] = {0, 0, 4, -4}     — tip-toe foot offset
+    // phase_diff[4] = {0, 0, -90°, -90°}  — legs in phase, feet trail by 90°
     void Walk(int steps, int speed) {
         steps = std::min(std::max(steps, 1), 10);
-        int delay_ms = std::min(std::max(speed, 200), 2000);
+        int period = std::min(std::max(speed, 200), 2000);
 
-        ESP_LOGI(TAG, "Walking %d steps, delay=%dms", steps, delay_ms);
+        const int kAmpLeg  = 30;  // Otto: leg amplitude
+        const int kAmpFoot = 20;  // Otto: foot amplitude
+        const int kOffsetLF = 4;   // Otto: left foot tip-toe
+        const int kOffsetRF = -4;  // Otto: right foot tip-toe
+        const int interval_ms = 15;
+        int samples = period / interval_ms;
+        if (samples < 20) samples = 20;
+        const float kPi = 3.14159265f;
+        float dphase = 2.0f * kPi / samples;
 
+        ESP_LOGI(TAG, "Walking %d steps, period=%dms, samples=%d", steps, period, samples);
+
+        auto setPose = [this](float leg_sin, float foot_sin) {
+            servos_[0].SetPosition(90 + kOffsetRF + (int)(kAmpFoot * foot_sin));
+            servos_[1].SetPosition(90 + (int)(kAmpLeg * leg_sin));
+            servos_[2].SetPosition(90 + (int)(kAmpLeg * leg_sin));
+            servos_[3].SetPosition(90 + kOffsetLF + (int)(kAmpFoot * foot_sin));
+        };
+
+        // Ramp into oscillation
+        for (int i = 0; i < samples; i++) {
+            float phase = i * dphase;
+            float ramp = (float)i / samples;
+            setPose(ramp * std::sin(phase), ramp * std::sin(phase + kPi / 2.0f));
+            vTaskDelay(pdMS_TO_TICKS(interval_ms));
+        }
+
+        // Full oscillation for N cycles
         for (int s = 0; s < steps; s++) {
-            // Step 1: lean right, lift left foot
-            servos_[1].SetPosition(70);  // left leg forward
-            servos_[3].SetPosition(110); // left foot up
-            vTaskDelay(pdMS_TO_TICKS(delay_ms));
+            for (int i = 0; i < samples; i++) {
+                float phase = i * dphase;
+                setPose(std::sin(phase), std::sin(phase + kPi / 2.0f));
+                vTaskDelay(pdMS_TO_TICKS(interval_ms));
+            }
+        }
 
-            // Step 2: place left foot, shift weight left
-            servos_[1].SetPosition(90);
-            servos_[3].SetPosition(90);
-            vTaskDelay(pdMS_TO_TICKS(delay_ms / 2));
+        // Ramp out of oscillation
+        for (int i = 0; i < samples; i++) {
+            float phase = i * dphase;
+            float ramp = 1.0f - (float)i / samples;
+            setPose(ramp * std::sin(phase), ramp * std::sin(phase + kPi / 2.0f));
+            vTaskDelay(pdMS_TO_TICKS(interval_ms));
+        }
 
-            // Step 3: lean left, lift right foot
-            servos_[0].SetPosition(110); // right leg forward
-            servos_[2].SetPosition(70);  // right foot up
-            vTaskDelay(pdMS_TO_TICKS(delay_ms));
-
-            // Step 4: place right foot, center
-            servos_[0].SetPosition(90);
-            servos_[2].SetPosition(90);
-            vTaskDelay(pdMS_TO_TICKS(delay_ms / 2));
+        // Ensure standing
+        for (int i = 0; i < 4; i++) {
+            servos_[i].SetPosition(90);
         }
     }
 
@@ -137,7 +175,7 @@ private:
 
         mcp.AddTool(
             "self.servo.walk",
-            "Walk forward with bipedal gait. steps: 1-10, speed: 200-2000ms (smaller=faster).",
+            "Sinusoidal side-sway walk (Otto-style). All 4 servos oscillate on a shared sine wave. steps: 1-10, speed: 200-2000ms per cycle (smaller=faster).",
             PropertyList({
                 Property("steps", kPropertyTypeInteger, 2, 1, 10),
                 Property("speed", kPropertyTypeInteger, 800, 200, 2000),
@@ -145,7 +183,6 @@ private:
             [this](const PropertyList& properties) -> ReturnValue {
                 int steps = properties["steps"].value<int>();
                 int speed = properties["speed"].value<int>();
-                // Walk runs in a background thread since it uses vTaskDelay
                 std::thread([this, steps, speed]() {
                     Walk(steps, speed);
                 }).detach();
