@@ -10,6 +10,7 @@
 #include <freertos/queue.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <thread>
 #include <vector>
@@ -61,6 +62,15 @@ public:
 private:
     ServoDriver servos_[4];
     int old_pos_[4];
+    std::atomic<bool> stop_requested_{false};
+
+    bool ShouldStop() {
+        if (stop_requested_.exchange(false)) {
+            Stand();
+            return true;
+        }
+        return false;
+    }
 
     void MoveServo(int servo_id, int angle) {
         if (servo_id < 1 || servo_id > 4) return;
@@ -488,30 +498,38 @@ private:
         int t = 495;  // BPM 121
 
         ESP_LOGI(TAG, "Smooth Criminal dance starting...");
+        stop_requested_ = false;
         ResetOldPositions();
         Stand();
 
         PrimeraParte(t);
+        if (ShouldStop()) return;
         SegundaParte(t);
+        if (ShouldStop()) return;
 
         Moonwalk(4, t * 2, 30, 1);
         Moonwalk(4, t * 2, 30, -1);
         Moonwalk(4, t * 2, 30, 1);
         Moonwalk(4, t * 2, 30, -1);
+        if (ShouldStop()) return;
 
         PrimeraParte(t);
+        if (ShouldStop()) return;
 
         Crusaito(1, t * 8, 30, 1);
         Crusaito(1, t * 7, 30, 1);
         for (int i = 0; i < 16; i++) {
+            if (stop_requested_) break;
             Flap(1, t / 4, 15, 1);
             vTaskDelay(pdMS_TO_TICKS(3 * t / 4));
         }
+        if (ShouldStop()) return;
 
         Moonwalk(4, t * 2, 30, -1);
         Moonwalk(4, t * 2, 30, 1);
         Moonwalk(4, t * 2, 30, -1);
         Moonwalk(4, t * 2, 30, 1);
+        if (ShouldStop()) return;
 
         Drunk(t * 4); Drunk(t * 4); Drunk(t * 4); Drunk(t * 4);
         KickLeft(t); KickRight(t);
@@ -519,27 +537,34 @@ private:
         vTaskDelay(pdMS_TO_TICKS(t * 4));
         Drunk(t / 2);
         vTaskDelay(pdMS_TO_TICKS(t * 4));
+        if (ShouldStop()) return;
 
         Walk(2, t * 2, 1);
         Walk(2, t * 2, -1);
+        if (ShouldStop()) return;
 
         GoingUp(t * 2); GoingUp(t * 1);
         NoGravity(t * 2);
+        if (ShouldStop()) return;
 
         Crusaito(1, t * 2, 30, 1);  Crusaito(1, t * 8, 30, 1);
         Crusaito(1, t * 2, 30, 1);  Crusaito(1, t * 8, 30, 1);
         Crusaito(1, t * 2, 30, 1);  Crusaito(1, t * 3, 30, 1);
         vTaskDelay(pdMS_TO_TICKS(t));
+        if (ShouldStop()) return;
 
         PrimeraParte(t);
+        if (ShouldStop()) return;
 
         for (int i = 0; i < 32; i++) {
+            if (stop_requested_) break;
             Flap(1, t / 2, 15, 1);
             vTaskDelay(pdMS_TO_TICKS(t / 2));
         }
 
         Stand();
-        ESP_LOGI(TAG, "Smooth Criminal dance complete");
+        ESP_LOGI(TAG, "Smooth Criminal dance %s", stop_requested_ ? "interrupted" : "complete");
+        stop_requested_ = false;
     }
 
     void DispatchAction(std::function<void()> action) {
@@ -796,6 +821,15 @@ private:
             });
 
         // -- Dance sequences --
+
+        mcp.AddTool(
+            "self.servo.stop",
+            "Immediately stop any running servo motion or dance. Use this when the user asks to stop, halt, or interrupt the current action.",
+            PropertyList(),
+            [this](const PropertyList&) -> ReturnValue {
+                stop_requested_ = true;
+                return true;
+            });
 
         mcp.AddTool(
             "self.servo.dance_smooth_criminal",
