@@ -396,10 +396,6 @@ LcdDisplay::~LcdDisplay() {
 
 bool LcdDisplay::Lock(int timeout_ms) {
      #if CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824    //魔眼
-        // if (xSemaphoreTake(eye_mutex, timeout_ms) != pdTRUE) {
-        //     ESP_LOGE("LCD", "Failed to acquire LCD mutex");
-        //     return ESP_FAIL;
-        // }
         return true;
     #else
         return lvgl_port_lock(timeout_ms);
@@ -408,7 +404,6 @@ bool LcdDisplay::Lock(int timeout_ms) {
 
 void LcdDisplay::Unlock() {
     #if CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824    //魔眼
-        // xSemaphoreGive(eye_mutex);
     #else
         lvgl_port_unlock();
     #endif
@@ -820,7 +815,51 @@ void LcdDisplay::SetupUI() {
 }
 
 void LcdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
+    if (img_dsc == nullptr || img_dsc->data == nullptr) return;
 
+    // photo_mode_ is already set by caller — EyeLoop/split/frame/SetEye
+    // all check it and bail out.  Give the current SPI batch (if any)
+    // a few ms to finish before we take over the panels.
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    int src_w = img_dsc->header.w;
+    int src_h = img_dsc->header.h;
+    int dst_w = width_;
+    int dst_h = height_;
+
+    // Crop source to a square, then scale down to fit the eye display
+    int square = (src_w < src_h) ? src_w : src_h;
+    int src_x0 = (src_w - square) / 2;
+    int src_y0 = (src_h - square) / 2;
+
+    const int batch_lines = 10;
+    size_t strip_size = batch_lines * dst_w * sizeof(uint16_t);
+    uint16_t* strip = (uint16_t*)heap_caps_malloc(strip_size, MALLOC_CAP_DMA);
+    if (strip == nullptr) {
+        ESP_LOGE(TAG, "Failed to allocate strip buffer for preview");
+        return;
+    }
+
+    const uint16_t* src = (const uint16_t*)img_dsc->data;
+    for (int y_start = 0; y_start < dst_h; y_start += batch_lines) {
+        int lines = (dst_h - y_start) < batch_lines ? (dst_h - y_start) : batch_lines;
+        for (int y = 0; y < lines; y++) {
+            int sy = src_y0 + (y_start + y) * square / dst_h;
+            for (int x = 0; x < dst_w; x++) {
+                int sx = src_x0 + x * square / dst_w;
+                // bswap16: Capture() byte-swapped camera data for LVGL;
+                // esp_lcd_panel_draw_bitmap expects big-endian, so swap back.
+                strip[y * dst_w + x] = __builtin_bswap16(src[sy * src_w + sx]);
+            }
+        }
+        esp_lcd_panel_draw_bitmap(panel_, 0, y_start, dst_w, y_start + lines, strip);
+        if (panel_2 != nullptr) {
+            esp_lcd_panel_draw_bitmap(panel_2, 0, y_start, dst_w, y_start + lines, strip);
+        }
+    }
+
+    heap_caps_free(strip);
+    ESP_LOGI(TAG, "Preview image shown on eye display (%dx%d)", dst_w, dst_h);
 }
 #else
 void LcdDisplay::SetupUI() {
@@ -1015,12 +1054,11 @@ void LcdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
 
     #if CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824  //如果开启魔眼显示
     void LcdDisplay::SetEye(int x_start, int y_start, int x_end, int y_end, const void *color_data){
-         Lock();
-        esp_err_t ret = esp_lcd_panel_draw_bitmap(panel_, x_start, y_start, x_end, y_end, color_data);
+        if (Application::GetInstance().photo_mode_) return;
+        esp_lcd_panel_draw_bitmap(panel_, x_start, y_start, x_end, y_end, color_data);
         #if CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824
-            esp_err_t ret2 = esp_lcd_panel_draw_bitmap(panel_2, x_start, y_start, x_end, y_end, color_data);
+            esp_lcd_panel_draw_bitmap(panel_2, x_start, y_start, x_end, y_end, color_data);
         #endif
-         Unlock();
     }
     #endif
 #else

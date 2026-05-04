@@ -7,8 +7,10 @@
 #include <esp_log.h>
 #include <esp_app_desc.h>
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <esp_pthread.h>
+#include <thread>
 
 #include "application.h"
 #include "display.h"
@@ -94,10 +96,25 @@ void McpServer::AddCommonTools() {
             PropertyList({
                 Property("question", kPropertyTypeString)
             }),
-            [camera](const PropertyList& properties) -> ReturnValue {
+            [camera, display](const PropertyList& properties) -> ReturnValue {
+                auto& app = Application::GetInstance();
+                app.photo_mode_ = true;
+
                 if (!camera->Capture()) {
+                    app.photo_mode_ = false;
                     return "{\"success\": false, \"message\": \"Failed to capture photo\"}";
                 }
+
+                // Restore eyes after 3 seconds in background
+                std::thread([display]() {
+                    std::this_thread::sleep_for(std::chrono::seconds(3));
+                    auto& app = Application::GetInstance();
+                    app.photo_mode_ = false;
+                    if (display) {
+                        display->SetEmotion("neutral");
+                    }
+                }).detach();
+
                 auto question = properties["question"].value<std::string>();
                 return camera->Explain(question);
             });

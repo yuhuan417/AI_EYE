@@ -90,8 +90,9 @@ Application::Application() {
 #if CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824  //如果开启魔眼显示
      is_blink =  true;
      is_track= false;
-     eyeNewX = 512; 
-     eyeNewY = 512; 
+     photo_mode_ = false;
+     eyeNewX = 512;
+     eyeNewY = 512;
      eye_style_num = 0;
      oldIris = (IRIS_MIN + IRIS_MAX) / 2;
      newIris = 0;
@@ -1431,6 +1432,7 @@ void Application::ShowOtaInfo(const std::string& code,const std::string& ip) {
         */
     void Application::frame(uint16_t iScale)
     {
+        if (photo_mode_) return;
         // uint32_t start_time = esp_timer_get_time();
         // ESP_LOGI(TAG, "frame start");
         static uint8_t eyeIndex = 0; // eye[] array counter //眼睛数组的索引
@@ -1619,6 +1621,7 @@ void Application::ShowOtaInfo(const std::string& code,const std::string& ip) {
         int32_t  duration,   // 动画持续时间（微秒）
         int16_t  range
     ) {    // 允许的缩放值变化范围
+        if (photo_mode_) return;
         if (range >= 8) { // 限制递归深度
             range    /= 2; // 将范围和时间分成两半
             duration /= 2;
@@ -1631,7 +1634,8 @@ void Application::ShowOtaInfo(const std::string& code,const std::string& ip) {
             int16_t v;      // Interim value
             // uint32_t start_time = esp_timer_get_time();
             // ESP_LOGI(TAG, "split start");
-            while ((dt = (esp_timer_get_time() - startTime)) < duration) {  //使用 esp_timer_get_time() 获取当前时间，并计算与 startTime 的时间差 dt。
+            while ((dt = (esp_timer_get_time() - startTime)) < duration) {
+                if (photo_mode_) return;
                 // 计算当前值
                 v = startValue + (((endValue - startValue) * dt) / duration);   //根据时间差 dt 和总时间 duration，计算当前虹膜的缩放值 v
                 if (v < IRIS_MIN) v = IRIS_MIN; // Clip just in case    确保 v 不会超出预定义的虹膜大小范围（IRIS_MIN 和 IRIS_MAX）。
@@ -1696,6 +1700,10 @@ void Application::EyeLoop() {
     }
 
     while(true){
+        if (photo_mode_) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
         ESP_LOGI(TAG,"EYE_Task...");
         newIris = random_range(IRIS_MIN, IRIS_MAX);    //
         split(oldIris, newIris, esp_timer_get_time(), 5000000L, IRIS_MAX - IRIS_MIN);  //
