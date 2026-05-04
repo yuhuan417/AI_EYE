@@ -60,6 +60,7 @@ public:
 
 private:
     ServoDriver servos_[4];
+    int old_pos_[4];
 
     void MoveServo(int servo_id, int angle) {
         if (servo_id < 1 || servo_id > 4) return;
@@ -335,6 +336,212 @@ private:
         servos_[3].SetPosition(120);
     }
 
+    // --- Keyframe interpolation (Otto Smooth Criminal moveNServos) ---
+    void MoveNServos(int time_ms, const int positions[4]) {
+        const int kInterval = 10;
+        int steps = time_ms / kInterval;
+        if (steps < 1) steps = 1;
+        float inc[4];
+        for (int i = 0; i < 4; i++)
+            inc[i] = (float)(positions[i] - old_pos_[i]) / steps;
+
+        for (int s = 1; s <= steps; s++) {
+            for (int i = 0; i < 4; i++)
+                servos_[i].SetPosition(old_pos_[i] + (int)(s * inc[i]));
+            vTaskDelay(pdMS_TO_TICKS(kInterval));
+        }
+        for (int i = 0; i < 4; i++) {
+            servos_[i].SetPosition(positions[i]);
+            old_pos_[i] = positions[i];
+        }
+    }
+
+    void ResetOldPositions() {
+        for (int i = 0; i < 4; i++) old_pos_[i] = 90;
+    }
+
+    // -- Smooth Criminal dance moves --
+    // t = 495ms per beat at BPM 121.
+
+    void GoingUp(int tempo) {
+        for (int i = 0; i < 4; i++) servos_[i].SetPosition(90);
+        vTaskDelay(pdMS_TO_TICKS(tempo));
+        servos_[0].SetPosition(80); servos_[3].SetPosition(100); vTaskDelay(pdMS_TO_TICKS(tempo));
+        servos_[0].SetPosition(70); servos_[3].SetPosition(110); vTaskDelay(pdMS_TO_TICKS(tempo));
+        servos_[0].SetPosition(60); servos_[3].SetPosition(120); vTaskDelay(pdMS_TO_TICKS(tempo));
+        servos_[0].SetPosition(50); servos_[3].SetPosition(130); vTaskDelay(pdMS_TO_TICKS(tempo));
+        servos_[0].SetPosition(40); servos_[3].SetPosition(140); vTaskDelay(pdMS_TO_TICKS(tempo));
+        servos_[0].SetPosition(30); servos_[3].SetPosition(150); vTaskDelay(pdMS_TO_TICKS(tempo));
+        servos_[0].SetPosition(20); servos_[3].SetPosition(160); vTaskDelay(pdMS_TO_TICKS(tempo));
+    }
+
+    void Drunk(int tempo) {
+        int m1[4] = {60, 90, 90, 70};
+        int m2[4] = {110, 90, 90, 120};
+        MoveNServos(tempo * 0.235, m1);
+        MoveNServos(tempo * 0.235, m2);
+        MoveNServos(tempo * 0.235, m1);
+        MoveNServos(tempo * 0.235, m2);
+    }
+
+    void NoGravity(int tempo) {
+        for (int i = 0; i < 4; i++) { servos_[i].SetPosition(90); old_pos_[i] = 90; }
+        int m1[4] = {120, 90, 90, 140};
+        int m2[4] = {140, 90, 90, 140};
+        int m3[4] = {90, 90, 90, 90};
+        MoveNServos(tempo * 2, m1);
+        MoveNServos(tempo * 2, m2);
+        vTaskDelay(pdMS_TO_TICKS(tempo * 2));
+        MoveNServos(tempo * 2, m1);
+        MoveNServos(tempo * 2, m3);
+    }
+
+    void KickLeft(int tempo) {
+        for (int i = 0; i < 4; i++) servos_[i].SetPosition(90);
+        vTaskDelay(pdMS_TO_TICKS(tempo));
+        servos_[0].SetPosition(50); servos_[3].SetPosition(70); vTaskDelay(pdMS_TO_TICKS(tempo));
+        servos_[0].SetPosition(80); servos_[3].SetPosition(70); vTaskDelay(pdMS_TO_TICKS(tempo/4));
+        servos_[0].SetPosition(30); servos_[3].SetPosition(70); vTaskDelay(pdMS_TO_TICKS(tempo/4));
+        servos_[0].SetPosition(80); servos_[3].SetPosition(70); vTaskDelay(pdMS_TO_TICKS(tempo/4));
+        servos_[0].SetPosition(30); servos_[3].SetPosition(70); vTaskDelay(pdMS_TO_TICKS(tempo/4));
+        servos_[0].SetPosition(80); servos_[3].SetPosition(70); vTaskDelay(pdMS_TO_TICKS(tempo));
+    }
+
+    void KickRight(int tempo) {
+        for (int i = 0; i < 4; i++) servos_[i].SetPosition(90);
+        vTaskDelay(pdMS_TO_TICKS(tempo));
+        servos_[0].SetPosition(110); servos_[3].SetPosition(130); vTaskDelay(pdMS_TO_TICKS(tempo));
+        servos_[0].SetPosition(110); servos_[3].SetPosition(100); vTaskDelay(pdMS_TO_TICKS(tempo/4));
+        servos_[0].SetPosition(110); servos_[3].SetPosition(150); vTaskDelay(pdMS_TO_TICKS(tempo/4));
+        servos_[0].SetPosition(110); servos_[3].SetPosition(80);  vTaskDelay(pdMS_TO_TICKS(tempo/4));
+        servos_[0].SetPosition(110); servos_[3].SetPosition(150); vTaskDelay(pdMS_TO_TICKS(tempo/4));
+        servos_[0].SetPosition(110); servos_[3].SetPosition(100); vTaskDelay(pdMS_TO_TICKS(tempo));
+    }
+
+    void LateralFuerte(bool side, int tempo) {
+        for (int i = 0; i < 4; i++) servos_[i].SetPosition(90);
+        if (side) servos_[0].SetPosition(40);
+        else servos_[3].SetPosition(140);
+        vTaskDelay(pdMS_TO_TICKS(tempo / 2));
+        servos_[0].SetPosition(90);
+        servos_[3].SetPosition(90);
+        vTaskDelay(pdMS_TO_TICKS(tempo / 2));
+    }
+
+    void PrimeraParte(int t) {
+        int m1[4] = {60, 90, 90, 120};
+        int m2[4] = {90, 90, 90, 90};
+        int m3[4] = {40, 90, 90, 140};
+
+        for (int x = 0; x < 3; x++) {
+            for (int i = 0; i < 3; i++) {
+                LateralFuerte(true, t/2);
+                LateralFuerte(false, t/4);
+                LateralFuerte(true, t/4);
+                vTaskDelay(pdMS_TO_TICKS(t));
+            }
+            for (int i = 0; i < 4; i++) { servos_[i].SetPosition(90); old_pos_[i] = 90; }
+            MoveNServos(t * 0.4, m1);
+            MoveNServos(t * 0.4, m2);
+            vTaskDelay(pdMS_TO_TICKS(t * 2));
+        }
+
+        for (int i = 0; i < 2; i++) {
+            LateralFuerte(true, t/2);
+            LateralFuerte(false, t/4);
+            LateralFuerte(true, t/4);
+            vTaskDelay(pdMS_TO_TICKS(t));
+        }
+
+        for (int i = 0; i < 4; i++) { servos_[i].SetPosition(90); old_pos_[i] = 90; }
+        Crusaito(1, t * 1.4, 15, 1);
+        MoveNServos(t * 1, m3);
+        for (int i = 0; i < 4; i++) servos_[i].SetPosition(90);
+        vTaskDelay(pdMS_TO_TICKS(t * 4));
+    }
+
+    void SegundaParte(int t) {
+        int m1[4]  = {90, 80, 100, 90};
+        int m2[4]  = {90, 100, 80, 90};
+        int m5[4]  = {40, 80, 100, 140};
+        int m6[4]  = {40, 100, 80, 140};
+
+        for (int x = 0; x < 7; x++) {
+            for (int i = 0; i < 3; i++) {
+                MoveNServos(t * 0.15, m1); MoveNServos(t * 0.15, m2);
+                MoveNServos(t * 0.15, m1); MoveNServos(t * 0.15, m2);
+                vTaskDelay(pdMS_TO_TICKS(t));
+            }
+            MoveNServos(t * 0.15, m5); MoveNServos(t * 0.15, m6);
+            MoveNServos(t * 0.15, m1); MoveNServos(t * 0.15, m2);
+            vTaskDelay(pdMS_TO_TICKS(t));
+        }
+
+        for (int i = 0; i < 3; i++) {
+            MoveNServos(t * 0.15, m5); MoveNServos(t * 0.15, m6);
+            MoveNServos(t * 0.15, m1); MoveNServos(t * 0.15, m2);
+            vTaskDelay(pdMS_TO_TICKS(t));
+        }
+    }
+
+    void SmoothCriminal() {
+        int t = 495;  // BPM 121
+
+        ESP_LOGI(TAG, "Smooth Criminal dance starting...");
+        ResetOldPositions();
+        Stand();
+
+        PrimeraParte(t);
+        SegundaParte(t);
+
+        Moonwalk(4, t * 2, 30, 1);
+        Moonwalk(4, t * 2, 30, -1);
+        Moonwalk(4, t * 2, 30, 1);
+        Moonwalk(4, t * 2, 30, -1);
+
+        PrimeraParte(t);
+
+        Crusaito(1, t * 8, 30, 1);
+        Crusaito(1, t * 7, 30, 1);
+        for (int i = 0; i < 16; i++) {
+            Flap(1, t / 4, 15, 1);
+            vTaskDelay(pdMS_TO_TICKS(3 * t / 4));
+        }
+
+        Moonwalk(4, t * 2, 30, -1);
+        Moonwalk(4, t * 2, 30, 1);
+        Moonwalk(4, t * 2, 30, -1);
+        Moonwalk(4, t * 2, 30, 1);
+
+        Drunk(t * 4); Drunk(t * 4); Drunk(t * 4); Drunk(t * 4);
+        KickLeft(t); KickRight(t);
+        Drunk(t * 8); Drunk(t * 4); Drunk(t / 2);
+        vTaskDelay(pdMS_TO_TICKS(t * 4));
+        Drunk(t / 2);
+        vTaskDelay(pdMS_TO_TICKS(t * 4));
+
+        Walk(2, t * 2, 1);
+        Walk(2, t * 2, -1);
+
+        GoingUp(t * 2); GoingUp(t * 1);
+        NoGravity(t * 2);
+
+        Crusaito(1, t * 2, 30, 1);  Crusaito(1, t * 8, 30, 1);
+        Crusaito(1, t * 2, 30, 1);  Crusaito(1, t * 8, 30, 1);
+        Crusaito(1, t * 2, 30, 1);  Crusaito(1, t * 3, 30, 1);
+        vTaskDelay(pdMS_TO_TICKS(t));
+
+        PrimeraParte(t);
+
+        for (int i = 0; i < 32; i++) {
+            Flap(1, t / 2, 15, 1);
+            vTaskDelay(pdMS_TO_TICKS(t / 2));
+        }
+
+        Stand();
+        ESP_LOGI(TAG, "Smooth Criminal dance complete");
+    }
+
     void DispatchAction(std::function<void()> action) {
         std::thread([action]() {
             action();
@@ -585,6 +792,17 @@ private:
                 int speed = properties["speed"].value<int>();
                 int height = properties["height"].value<int>();
                 DispatchAction([this, steps, speed, height]() { Ascend(steps, speed, height); });
+                return true;
+            });
+
+        // -- Dance sequences --
+
+        mcp.AddTool(
+            "self.servo.dance_smooth_criminal",
+            "Perform the full Smooth Criminal dance by Michael Jackson. A 60-second choreographed robot dance sequence. Use this when the user asks for a dance, wants to show off, or mentions Smooth Criminal.",
+            PropertyList(),
+            [this](const PropertyList&) -> ReturnValue {
+                DispatchAction([this]() { SmoothCriminal(); });
                 return true;
             });
     }

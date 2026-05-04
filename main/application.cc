@@ -617,7 +617,7 @@ void Application::Start() {
     #if CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824  //如果开启魔眼显示
     //按键初始化
     touch_button_ = std::make_unique<TouchButton>();
-    ReinitServoPwm();
+    InitializeServoController();
     #endif
 
     audio_debugger_ = std::make_unique<AudioDebugger>();

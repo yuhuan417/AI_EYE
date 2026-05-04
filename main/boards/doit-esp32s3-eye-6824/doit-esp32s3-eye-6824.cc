@@ -318,7 +318,6 @@ public:
 
         // InitializePowerSaveTimer();
         InitializeCamera();
-        InitializeServoController();
         audio_codec.OnWakeUp([this](const std::string &command)
                              {
             if (command == std::string(vb6824_get_wakeup_word())){
