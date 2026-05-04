@@ -26,22 +26,14 @@ public:
             servos_[i].Attach(kServoGpios[i], kServoChannels[i]);
             servos_[i].SetPosition(90);
         }
-        vTaskDelay(pdMS_TO_TICKS(300));
-
-        // Startup wiggle test: small sweep to verify PWM output
-        ESP_LOGI(TAG, "=== Servo startup test: wiggling each servo ===");
-        for (int i = 0; i < 4; i++) {
-            ESP_LOGI(TAG, "Servo %d (GPIO %d): 75 -> 105 -> 90", i + 1, kServoGpios[i]);
-            servos_[i].SetPosition(75);
-            vTaskDelay(pdMS_TO_TICKS(300));
-            servos_[i].SetPosition(105);
-            vTaskDelay(pdMS_TO_TICKS(300));
-            servos_[i].SetPosition(90);
-            vTaskDelay(pdMS_TO_TICKS(200));
-        }
-        ESP_LOGI(TAG, "=== Servo startup test complete ===");
 
         RegisterMcpTools();
+    }
+
+    void ReinitPwm() {
+        for (int i = 0; i < 4; i++) {
+            servos_[i].ReinitChannel();
+        }
     }
 
     ~ServoController() {
@@ -168,5 +160,13 @@ void InitializeServoController() {
     if (g_servo_controller == nullptr) {
         g_servo_controller = new ServoController();
         ESP_LOGI(TAG, "Servo controller initialized");
+    }
+}
+
+void ReinitServoPwm() {
+    if (g_servo_controller) {
+        ESP_LOGI(TAG, "Reinitializing servo PWM channels...");
+        g_servo_controller->ReinitPwm();
+        ESP_LOGI(TAG, "Servo PWM reinit complete");
     }
 }

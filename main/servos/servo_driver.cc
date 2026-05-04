@@ -40,13 +40,13 @@ void ServoDriver::Attach(int pin, ledc_channel_t channel, bool rev) {
         ledc_timer_config_t ledc_timer = {
             .speed_mode = LEDC_LOW_SPEED_MODE,
             .duty_resolution = LEDC_TIMER_13_BIT,
-            .timer_num = LEDC_TIMER_1,
+            .timer_num = LEDC_TIMER_2,
             .freq_hz = 50,
-            .clk_cfg = LEDC_USE_APB_CLK
+            .clk_cfg = LEDC_AUTO_CLK
         };
         ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
         timer_configured = true;
-        ESP_LOGI(TAG, "LEDC timer 1 configured at 50Hz");
+        ESP_LOGI(TAG, "LEDC timer 2 configured at 50Hz");
     }
 
     ledc_channel_config_t ledc_channel_cfg = {
@@ -54,7 +54,7 @@ void ServoDriver::Attach(int pin, ledc_channel_t channel, bool rev) {
         .speed_mode = LEDC_LOW_SPEED_MODE,
         .channel = ledc_channel_,
         .intr_type = LEDC_INTR_DISABLE,
-        .timer_sel = LEDC_TIMER_1,
+        .timer_sel = LEDC_TIMER_2,
         .duty = 0,
         .hpoint = 0
     };
@@ -103,17 +103,31 @@ void ServoDriver::Write(int position) {
 
     uint32_t duty = (uint32_t)(((angle / 180.0) * 2.0 + 0.5) * 8191 / 20.0);
 
+    ESP_ERROR_CHECK(ledc_set_duty_with_hpoint(ledc_speed_mode_, ledc_channel_, duty, 0));
+    ESP_ERROR_CHECK(ledc_update_duty(ledc_speed_mode_, ledc_channel_));
+    ESP_ERROR_CHECK(ledc_bind_channel_timer(ledc_speed_mode_, ledc_channel_, LEDC_TIMER_2));
+
+    ESP_LOGI(TAG, "GPIO%d ch%d angle=%d duty=%" PRIu32,
+             pin_, ledc_channel_, angle, duty);
+}
+
+void ServoDriver::ReinitChannel() {
+    if (!is_attached_) return;
+
+    int angle = pos_ + trim_;
+    angle = std::min(std::max(angle, 0), 180);
+    uint32_t duty = (uint32_t)(((angle / 180.0) * 2.0 + 0.5) * 8191 / 20.0);
+
     ledc_channel_config_t ledc_channel_cfg = {
         .gpio_num = pin_,
         .speed_mode = ledc_speed_mode_,
         .channel = ledc_channel_,
         .intr_type = LEDC_INTR_DISABLE,
-        .timer_sel = LEDC_TIMER_1,
+        .timer_sel = LEDC_TIMER_2,
         .duty = duty,
         .hpoint = 0
     };
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel_cfg));
-
-    ESP_LOGI(TAG, "GPIO%d ch%d angle=%d duty=%" PRIu32,
-             pin_, ledc_channel_, angle, duty);
+    ESP_LOGI(TAG, "Reinit GPIO%d ch%d duty=%" PRIu32, pin_, ledc_channel_, duty);
 }
+

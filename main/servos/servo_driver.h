@@ -20,6 +20,7 @@ public:
     void Detach();
     void SetPosition(int position);
     void SetAngle(int angle);
+    void ReinitChannel();
     int GetPosition() { return pos_; }
 
 private:

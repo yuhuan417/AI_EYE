@@ -11,6 +11,7 @@
 #include "assets/lang_config.h"
 #include "mcp_server.h"
 #include "audio_debugger.h"
+#include "servos/servo_controller.h"
 
 #if CONFIG_USE_AUDIO_PROCESSOR
 #include "afe_audio_processor.h"
@@ -612,9 +613,11 @@ void Application::Start() {
         }
     });
     bool protocol_started = protocol_->Start();
+
     #if CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824  //如果开启魔眼显示
     //按键初始化
     touch_button_ = std::make_unique<TouchButton>();
+    ReinitServoPwm();
     #endif
 
     audio_debugger_ = std::make_unique<AudioDebugger>();
