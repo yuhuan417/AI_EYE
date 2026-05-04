@@ -46,7 +46,7 @@ void ServoDriver::Attach(int pin, ledc_channel_t channel, bool rev) {
         };
         ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
         timer_configured = true;
-        ESP_LOGI(TAG, "LEDC timer 2 configured at 50Hz");
+        ESP_LOGD(TAG, "LEDC timer 2 configured at 50Hz");
     }
 
     ledc_channel_config_t ledc_channel_cfg = {
@@ -107,7 +107,7 @@ void ServoDriver::Write(int position) {
     ESP_ERROR_CHECK(ledc_update_duty(ledc_speed_mode_, ledc_channel_));
     ESP_ERROR_CHECK(ledc_bind_channel_timer(ledc_speed_mode_, ledc_channel_, LEDC_TIMER_2));
 
-    ESP_LOGI(TAG, "GPIO%d ch%d angle=%d duty=%" PRIu32,
+    ESP_LOGD(TAG, "GPIO%d ch%d angle=%d duty=%" PRIu32,
              pin_, ledc_channel_, angle, duty);
 }
 
@@ -128,6 +128,6 @@ void ServoDriver::ReinitChannel() {
         .hpoint = 0
     };
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel_cfg));
-    ESP_LOGI(TAG, "Reinit GPIO%d ch%d duty=%" PRIu32, pin_, ledc_channel_, duty);
+    ESP_LOGD(TAG, "Reinit GPIO%d ch%d duty=%" PRIu32, pin_, ledc_channel_, duty);
 }
 
