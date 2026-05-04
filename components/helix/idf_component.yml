@@ -1,0 +1,4 @@
+version: "1.0.0"
+description: "Helix MP3 decoder"
+license: "RPSL"
+url: "https://github.com/mkopa/libhelix-esp32-arduino"

@@ -2,9 +2,11 @@
 #include "servo_driver.h"
 #include "mcp_server.h"
 #include "application.h"
+#include "board.h"
 
 #include <driver/ledc.h>
 #include <esp_log.h>
+#include <esp_pthread.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
@@ -14,6 +16,9 @@
 #include <cmath>
 #include <thread>
 #include <vector>
+
+#include "smooth_criminal_mp3.h"
+#include <mp3dec.h>
 
 static const char* TAG = "ServoController";
 
@@ -70,6 +75,54 @@ private:
             return true;
         }
         return false;
+    }
+
+    static void MusicTask(void* arg) {
+        auto self = (ServoController*)arg;
+        auto codec = Board::GetInstance().GetAudioCodec();
+        if (!codec) { vTaskDelete(NULL); return; }
+
+        codec->EnableOutput(true);
+
+        HMP3Decoder decoder = MP3InitDecoder();
+        if (!decoder) { vTaskDelete(NULL); return; }
+
+        unsigned char* ptr = (unsigned char*)smooth_criminal_mp3;
+        const unsigned char* end = ptr + smooth_criminal_mp3_len;
+
+        while (!self->stop_requested_ && ptr < end) {
+            int bytesLeft = end - ptr;
+            short pcm[MAX_NSAMP * MAX_NCHAN];
+            int result = MP3Decode(decoder, &ptr, &bytesLeft, pcm, 0);
+            if (result != ERR_MP3_NONE) {
+                if (result == ERR_MP3_INDATA_UNDERFLOW) break;
+                // Skip bad frame: advance past sync word
+                int sync = MP3FindSyncWord(ptr, bytesLeft);
+                ptr += (sync > 0) ? sync : 1;
+                continue;
+            }
+
+            MP3FrameInfo info;
+            MP3GetLastFrameInfo(decoder, &info);
+            if (info.outputSamps <= 0) continue;
+
+            // Mix multi-channel to mono
+            int ns = info.outputSamps;
+            if (info.nChans > 1)
+                for (int i = 0; i < ns; i++) pcm[i] = pcm[i * info.nChans];
+
+            std::vector<int16_t> frame(pcm, pcm + ns);
+            codec->OutputData(frame);
+            vTaskDelay(pdMS_TO_TICKS(ns * 1000 / 16000));
+        }
+
+        MP3FreeDecoder(decoder);
+        codec->EnableOutput(false);
+        vTaskDelete(NULL);
+    }
+
+    void PlayMusic() {
+        xTaskCreate(MusicTask, "music", 8192, this, 5, NULL);
     }
 
     void MoveServo(int servo_id, int angle) {
@@ -495,10 +548,11 @@ private:
     }
 
     void SmoothCriminal() {
-        int t = 495;  // BPM 121
+        int t = 508;  // 118 BPM (60000/118 ≈ 508ms per beat)
 
         ESP_LOGI(TAG, "Smooth Criminal dance starting...");
         stop_requested_ = false;
+        PlayMusic();
         ResetOldPositions();
         Stand();
 
@@ -518,7 +572,7 @@ private:
 
         Crusaito(1, t * 8, 30, 1);
         Crusaito(1, t * 7, 30, 1);
-        for (int i = 0; i < 16; i++) {
+        for (int i = 0; i < 4; i++) {
             if (stop_requested_) break;
             Flap(1, t / 4, 15, 1);
             vTaskDelay(pdMS_TO_TICKS(3 * t / 4));
@@ -549,14 +603,12 @@ private:
 
         Crusaito(1, t * 2, 30, 1);  Crusaito(1, t * 8, 30, 1);
         Crusaito(1, t * 2, 30, 1);  Crusaito(1, t * 8, 30, 1);
-        Crusaito(1, t * 2, 30, 1);  Crusaito(1, t * 3, 30, 1);
-        vTaskDelay(pdMS_TO_TICKS(t));
         if (ShouldStop()) return;
 
         PrimeraParte(t);
         if (ShouldStop()) return;
 
-        for (int i = 0; i < 32; i++) {
+        for (int i = 0; i < 28; i++) {
             if (stop_requested_) break;
             Flap(1, t / 2, 15, 1);
             vTaskDelay(pdMS_TO_TICKS(t / 2));
