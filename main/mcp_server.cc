@@ -83,6 +83,42 @@ void McpServer::AddCommonTools() {
                 display->SetTheme(properties["theme"].value<std::string>().c_str());
                 return true;
             });
+
+#if CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824
+        AddTool("self.screen.eye_style",
+            "Change the robot's eye skin/style. Available styles:\n"
+            "  `default` (1) — standard human eye\n"
+            "  `blood` (2) — red bloodshot eye\n"
+            "  `cospa` (3) — cute anime girl eye\n"
+            "  `spikes` (4) — spiky pupil eye\n"
+            "  `ribbon` (5) — ribbon-shaped pupil\n"
+            "  `black_star` (6) — black star pupil\n"
+            "  `straw` (7) — straw hat pirate eye\n"
+            "Use this tool when the user asks to change eyes, switch eye style, or try a different look.\n"
+            "Args:\n"
+            "  `style`: The style name or number (1-7).",
+            PropertyList({
+                Property("style", kPropertyTypeString)
+            }),
+            [](const PropertyList& properties) -> ReturnValue {
+                auto& app = Application::GetInstance();
+                auto style = properties["style"].value<std::string>();
+                int num = 0;
+                if (style == "default" || style == "1") num = 1;
+                else if (style == "blood" || style == "2") num = 2;
+                else if (style == "cospa" || style == "3") num = 3;
+                else if (style == "spikes" || style == "4") num = 4;
+                else if (style == "ribbon" || style == "5") num = 5;
+                else if (style == "black_star" || style == "6") num = 6;
+                else if (style == "straw" || style == "7") num = 7;
+                if (num > 0) {
+                    app.eye_style_num = num;
+                    app.eye_style(num);
+                    return "{\"style\": " + std::to_string(num) + "}";
+                }
+                return "{\"error\": \"Unknown eye style: " + style + "\"}";
+            });
+#endif
     }
 
     auto camera = board.GetCamera();

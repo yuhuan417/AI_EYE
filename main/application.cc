@@ -11,6 +11,7 @@
 #include "assets/lang_config.h"
 #include "mcp_server.h"
 #include "audio_debugger.h"
+#include "settings.h"
 #include "servos/servo_controller.h"
 
 #if CONFIG_USE_AUDIO_PROCESSOR
@@ -93,7 +94,6 @@ Application::Application() {
      photo_mode_ = false;
      eyeNewX = 512;
      eyeNewY = 512;
-     eye_style_num = 0;
      oldIris = (IRIS_MIN + IRIS_MAX) / 2;
      newIris = 0;
      startTime = 0;
@@ -104,6 +104,9 @@ Application::Application() {
      lower = lower_default;
      polar = polar_default;
      iris = iris_default;
+     Settings settings("eye", false);
+     eye_style_num = settings.GetInt("style", 0);
+     if (eye_style_num > 0) eye_style(eye_style_num);
 #endif
 
     esp_timer_create_args_t clock_timer_args = {
@@ -1653,6 +1656,9 @@ void Application::ShowOtaInfo(const std::string& code,const std::string& ip) {
     {
         // is_track = rand() % 2;
         is_track = false;
+        eye_style_num = eye_style;
+        Settings settings("eye", true);
+        settings.SetInt("style", eye_style);
         switch (eye_style)
         {
         case 1:
