@@ -1690,6 +1690,30 @@ void Application::ShowOtaInfo(const std::string& code,const std::string& ip) {
             iris = iris_style_straw;
             sclera = sclera_style_lufei;
             break;
+        case 8:
+            iris = iris_cat;
+            sclera = sclera_cat;
+            break;
+        case 9:
+            iris = iris_dragon;
+            sclera = sclera_dragon;
+            break;
+        case 10:
+            iris = iris_goat;
+            sclera = sclera_goat;
+            break;
+        case 11:
+            iris = iris_newt;
+            sclera = sclera_newt;
+            break;
+        case 12:
+            iris = iris_nosclera;
+            sclera = sclera_nosclera;
+            break;
+        case 13:
+            iris = iris_terminator;
+            sclera = sclera_terminator;
+            break;
         default:
             break;
         }

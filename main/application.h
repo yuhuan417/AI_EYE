@@ -44,7 +44,13 @@
     #include "eye_data/160_160/black_star.h"
     #include "eye_data/160_160/straw.h"
     #include "eye_data/160_160/upper_lower_common.h"
-#else 
+    #include "eye_data/160_160/catEye.h"
+    #include "eye_data/160_160/dragonEye.h"
+    #include "eye_data/160_160/goatEye.h"
+    #include "eye_data/160_160/newtEye.h"
+    #include "eye_data/160_160/noScleraEye.h"
+    #include "eye_data/160_160/terminatorEye.h"
+#else
    #include "eye_data/240_240/blood.h"
     #include "eye_data/240_240/cospa.h"
     #include "eye_data/240_240/default.h"

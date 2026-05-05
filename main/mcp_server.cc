@@ -94,9 +94,15 @@ void McpServer::AddCommonTools() {
             "  `ribbon` (5) — ribbon-shaped pupil\n"
             "  `black_star` (6) — black star pupil\n"
             "  `straw` (7) — straw hat pirate eye\n"
+            "  `cat` (8) — cat eye with slit pupil\n"
+            "  `dragon` (9) — dragon eye\n"
+            "  `goat` (10) — goat eye with horizontal pupil\n"
+            "  `newt` (11) — newt eye\n"
+            "  `nosclera` (12) — no-sclera dark eye\n"
+            "  `terminator` (13) — red terminator eye\n"
             "Use this tool when the user asks to change eyes, switch eye style, or try a different look.\n"
             "Args:\n"
-            "  `style`: The style name or number (1-7).",
+            "  `style`: The style name or number (1-13).",
             PropertyList({
                 Property("style", kPropertyTypeString)
             }),
@@ -111,6 +117,12 @@ void McpServer::AddCommonTools() {
                 else if (style == "ribbon" || style == "5") num = 5;
                 else if (style == "black_star" || style == "6") num = 6;
                 else if (style == "straw" || style == "7") num = 7;
+                else if (style == "cat" || style == "8") num = 8;
+                else if (style == "dragon" || style == "9") num = 9;
+                else if (style == "goat" || style == "10") num = 10;
+                else if (style == "newt" || style == "11") num = 11;
+                else if (style == "nosclera" || style == "12") num = 12;
+                else if (style == "terminator" || style == "13") num = 13;
                 if (num > 0) {
                     app.eye_style_num = num;
                     app.eye_style(num);
