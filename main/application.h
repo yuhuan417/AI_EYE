@@ -56,10 +56,6 @@
     #include "eye_data/240_240/upper_lower_common.h"
 #endif
 
-#if CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824  //如果开启魔眼显示
-    #include "touch_button.h"
-#endif
-
 
 #define SCHEDULE_EVENT (1 << 0)
 #define SEND_AUDIO_EVENT (1 << 1)
@@ -256,10 +252,6 @@ private:
     
     TaskHandle_t eye_loop_task_handle_ = NULL;   //魔眼更新任务的句柄
     // static const uint8_t ease[];
-
-#if CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824  //如果开启魔眼显示
-        std::unique_ptr<TouchButton> touch_button_;    //按键
-    #endif
 
 #endif
 

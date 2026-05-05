@@ -111,23 +111,3 @@ void ServoDriver::Write(int position) {
              pin_, ledc_channel_, angle, duty);
 }
 
-void ServoDriver::ReinitChannel() {
-    if (!is_attached_) return;
-
-    int angle = pos_ + trim_;
-    angle = std::min(std::max(angle, 0), 180);
-    uint32_t duty = (uint32_t)(((angle / 180.0) * 2.0 + 0.5) * 8191 / 20.0);
-
-    ledc_channel_config_t ledc_channel_cfg = {
-        .gpio_num = pin_,
-        .speed_mode = ledc_speed_mode_,
-        .channel = ledc_channel_,
-        .intr_type = LEDC_INTR_DISABLE,
-        .timer_sel = LEDC_TIMER_2,
-        .duty = duty,
-        .hpoint = 0
-    };
-    ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel_cfg));
-    ESP_LOGD(TAG, "Reinit GPIO%d ch%d duty=%" PRIu32, pin_, ledc_channel_, duty);
-}
-

@@ -19,9 +19,6 @@
 #include <driver/spi_common.h>
 
 #include <esp_lcd_gc9a01.h>
-#if CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824 // 如果开启魔眼显示
-#include "touch_button.h"
-#endif
 #include "esp32_camera.h"
 #include "servos/servo_controller.h"
 #define TAG "CompactWifiBoardLCD"
@@ -115,11 +112,6 @@ private:
             }
             audio_codec.OtaStart(0); });
 #endif
-        // boot_button_.OnDoubleClick([this]() {
-        //     auto& app = Application::GetInstance();
-        //     app.eye_style_num = (app.eye_style_num+1) % 8;
-        //     app.eye_style(app.eye_style_num);
-        // });
     }
 
     // 物联网初始化，添加对 AI 可见设备
@@ -318,6 +310,7 @@ public:
 
         // InitializePowerSaveTimer();
         InitializeCamera();
+        InitializeServoController();
         audio_codec.OnWakeUp([this](const std::string &command)
                              {
             if (command == std::string(vb6824_get_wakeup_word())){

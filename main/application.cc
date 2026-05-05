@@ -618,12 +618,6 @@ void Application::Start() {
     });
     bool protocol_started = protocol_->Start();
 
-    #if CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824  //如果开启魔眼显示
-    //按键初始化
-    touch_button_ = std::make_unique<TouchButton>();
-    InitializeServoController();
-    #endif
-
     audio_debugger_ = std::make_unique<AudioDebugger>();
     audio_processor_->Initialize(codec);
 #ifndef CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS
@@ -1662,7 +1656,6 @@ void Application::ShowOtaInfo(const std::string& code,const std::string& ip) {
 
     void Application::eye_style(uint8_t eye_style)
     {
-        // is_track = rand() % 2;
         is_track = false;
         eye_style_num = eye_style;
         Settings settings("eye", true);

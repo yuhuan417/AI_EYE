@@ -55,12 +55,6 @@ public:
         RegisterMcpTools();
     }
 
-    void ReinitPwm() {
-        for (int i = 0; i < 4; i++) {
-            servos_[i].ReinitChannel();
-        }
-    }
-
     ~ServoController() {
         for (int i = 0; i < 4; i++) {
             servos_[i].Detach();
@@ -1353,13 +1347,6 @@ void InitializeServoController() {
     }
 }
 
-void ReinitServoPwm() {
-    if (g_servo_controller) {
-        ESP_LOGI(TAG, "Reinitializing servo PWM channels...");
-        g_servo_controller->ReinitPwm();
-        ESP_LOGI(TAG, "Servo PWM reinit complete");
-    }
-}
 
 bool IsMusicPlaying() {
     return music_playing_;
