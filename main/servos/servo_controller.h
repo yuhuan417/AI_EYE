@@ -2,6 +2,6 @@
 #define SERVO_CONTROLLER_H
 
 void InitializeServoController();
-void ReinitServoPwm();
+bool IsMusicPlaying();
 
 #endif

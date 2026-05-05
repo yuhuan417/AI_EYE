@@ -839,6 +839,14 @@ void Application::OnAudioOutput() {
         return;
     }
 
+    if (IsMusicPlaying()) {
+        // Drain stale audio while music is playing
+        std::lock_guard<std::mutex> lock(mutex_);
+        audio_decode_queue_.clear();
+        audio_decode_cv_.notify_all();
+        return;
+    }
+
     auto now = std::chrono::steady_clock::now();
     auto codec = Board::GetInstance().GetAudioCodec();
     const int max_silence_seconds = 10;
