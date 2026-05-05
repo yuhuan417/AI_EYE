@@ -86,10 +86,11 @@ private:
         if (!codec) { music_playing_ = false; vTaskDelete(NULL); return; }
 
         codec->EnableOutput(true);
-        music_playing_ = true;
 
         HMP3Decoder decoder = MP3InitDecoder();
         if (!decoder) { music_playing_ = false; vTaskDelete(NULL); return; }
+
+        music_playing_ = true;
 
         unsigned char* ptr = (unsigned char*)smooth_criminal_mp3;
         const unsigned char* end = ptr + smooth_criminal_mp3_len;
@@ -134,10 +135,11 @@ private:
         if (!codec) { music_playing_ = false; vTaskDelete(NULL); return; }
 
         codec->EnableOutput(true);
-        music_playing_ = true;
 
         HMP3Decoder decoder = MP3InitDecoder();
         if (!decoder) { music_playing_ = false; vTaskDelete(NULL); return; }
+
+        music_playing_ = true;
 
         unsigned char* ptr = (unsigned char*)single_ladies_mp3;
         const unsigned char* end = ptr + single_ladies_mp3_len;
@@ -585,6 +587,8 @@ private:
         ESP_LOGI(TAG, "Smooth Criminal dance starting...");
         stop_requested_ = false;
         PlayMusic();
+        { int waits = 0; while (!music_playing_ && !stop_requested_ && waits++ < 200) vTaskDelay(pdMS_TO_TICKS(10)); }
+        if (ShouldStop() || !music_playing_) return;
         ResetOldPositions();
         Stand();
 
@@ -876,6 +880,8 @@ private:
         ESP_LOGI(TAG, "Single Ladies dance starting...");
         stop_requested_ = false;
         PlaySingleLadies();
+        { int waits = 0; while (!music_playing_ && !stop_requested_ && waits++ < 200) vTaskDelay(pdMS_TO_TICKS(10)); }
+        if (ShouldStop() || !music_playing_) return;
         ResetOldPositions();
         Stand();
 
