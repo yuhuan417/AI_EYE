@@ -188,47 +188,6 @@ private:
         }
     }
 
-    // Run sinusoidal oscillation for N steps with ramp in/out.
-    // Arrays are in OUR servo order: [RF, RL, LL, LF].
-    void RunOscillation(int steps, int period,
-                        const int amp[4], const int offset[4], const float phase[4]) {
-        const int interval_ms = 15;
-        int samples = period / interval_ms;
-        if (samples < 20) samples = 20;
-        const float kPi = 3.14159265f;
-        float dphase = 2.0f * kPi / samples;
-
-        // Ramp in
-        for (int i = 0; i < samples; i++) {
-            float p = i * dphase;
-            float ramp = (float)i / samples;
-            for (int j = 0; j < 4; j++)
-                servos_[j].SetPosition(90 + offset[j] + (int)(ramp * amp[j] * std::sin(p + phase[j])));
-            vTaskDelay(pdMS_TO_TICKS(interval_ms));
-        }
-
-        // Full oscillation
-        for (int s = 0; s < steps; s++) {
-            for (int i = 0; i < samples; i++) {
-                float p = i * dphase;
-                for (int j = 0; j < 4; j++)
-                    servos_[j].SetPosition(90 + offset[j] + (int)(amp[j] * std::sin(p + phase[j])));
-                vTaskDelay(pdMS_TO_TICKS(interval_ms));
-            }
-        }
-
-        // Ramp out
-        for (int i = 0; i < samples; i++) {
-            float p = i * dphase;
-            float ramp = 1.0f - (float)i / samples;
-            for (int j = 0; j < 4; j++)
-                servos_[j].SetPosition(90 + offset[j] + (int)(ramp * amp[j] * std::sin(p + phase[j])));
-            vTaskDelay(pdMS_TO_TICKS(interval_ms));
-        }
-
-        Stand();
-    }
-
     // Pure sinusoidal oscillation — matching Otto's oscillate().
     // No ramp in/out, no period clamp, 30ms sampling (Otto default).
     // Arrays are in OUR servo order: [RF, RL, LL, LF].
@@ -256,7 +215,6 @@ private:
     // Our forward needs +90° for feet (flip sign).
     void Walk(int steps, int speed, int dir) {
         steps = std::min(std::max(steps, 1), 10);
-        int period = std::min(std::max(speed, 200), 2000);
 
         int amp[4] = {30, 30, 30, 30};
         int offset[4] = {-5, 0, 0, 5};
@@ -267,8 +225,8 @@ private:
             DEG2RAD(dir * 90),   // LF: foot
         };
 
-        ESP_LOGI(TAG, "Walking %d steps, period=%dms, dir=%d", steps, period, dir);
-        RunOscillation(steps, period, amp, offset, phase);
+        ESP_LOGI(TAG, "Walking %d steps, period=%dms, dir=%d", steps, speed, dir);
+        OttoOscillate(steps, speed, amp, offset, phase);
     }
 
     // Turn: directly mapped from Otto.
@@ -281,7 +239,6 @@ private:
     // With +90° timing the foot lifts at neutral and the robot can't turn.
     void Turn(int steps, int speed, int dir) {
         steps = std::min(std::max(steps, 1), 10);
-        int period = std::min(std::max(speed, 200), 2000);
 
         // Our order: [RF, RL, LL, LF]
         // LEFT  (dir= 1): LL=30, RL= 0  → amp[1]=0,  amp[2]=30
@@ -300,15 +257,14 @@ private:
             DEG2RAD(-90),  // LF: foot (Otto original)
         };
 
-        ESP_LOGI(TAG, "Turning %d steps, period=%dms, dir=%d", steps, period, dir);
-        RunOscillation(steps, period, amp, offset, phase);
+        ESP_LOGI(TAG, "Turning %d steps, period=%dms, dir=%d", steps, speed, dir);
+        OttoOscillate(steps, speed, amp, offset, phase);
     }
 
     // Otto UpDown: A={0,0,h,h}, O={0,0,h,-h}, phase={0,0,-90°,90°}
     // Feet 180° out of phase, legs still. Bouncing motion.
     void Bounce(int steps, int speed, int height) {
         steps = std::min(std::max(steps, 1), 10);
-        int period = std::min(std::max(speed, 200), 2000);
         height = std::min(std::max(height, 5), 30);
 
         int amp[4] = {height, 0, 0, height};
@@ -320,45 +276,42 @@ private:
             DEG2RAD(-90),   // LF: foot 180° out of phase
         };
 
-        ESP_LOGI(TAG, "Bouncing %d steps, period=%dms, h=%d", steps, period, height);
-        RunOscillation(steps, period, amp, offset, phase);
+        ESP_LOGI(TAG, "Bouncing %d steps, period=%dms, h=%d", steps, speed, height);
+        OttoOscillate(steps, speed, amp, offset, phase);
     }
 
     // Otto Swing: A={0,0,h,h}, O={0,0,h/2,-h/2}, phase={0,0,0,0}
     // Feet in phase, offset half amplitude. Side sway.
     void Sway(int steps, int speed, int height) {
         steps = std::min(std::max(steps, 1), 10);
-        int period = std::min(std::max(speed, 200), 2000);
         height = std::min(std::max(height, 5), 30);
 
         int amp[4] = {height, 0, 0, height};
         int offset[4] = {-height / 2, 0, 0, height / 2};
         float phase[4] = {0, 0, 0, 0};
 
-        ESP_LOGI(TAG, "Swaying %d steps, period=%dms, h=%d", steps, period, height);
-        RunOscillation(steps, period, amp, offset, phase);
+        ESP_LOGI(TAG, "Swaying %d steps, period=%dms, h=%d", steps, speed, height);
+        OttoOscillate(steps, speed, amp, offset, phase);
     }
 
     // Otto TiptoeSwing: A={0,0,h,h}, O={0,0,h,-h}, phase={0,0,0,0}
     // Like swing but full offset keeps heels up.
     void Tiptoe(int steps, int speed, int height) {
         steps = std::min(std::max(steps, 1), 10);
-        int period = std::min(std::max(speed, 200), 2000);
         height = std::min(std::max(height, 5), 30);
 
         int amp[4] = {height, 0, 0, height};
         int offset[4] = {-height, 0, 0, height};
         float phase[4] = {0, 0, 0, 0};
 
-        ESP_LOGI(TAG, "Tiptoe %d steps, period=%dms, h=%d", steps, period, height);
-        RunOscillation(steps, period, amp, offset, phase);
+        ESP_LOGI(TAG, "Tiptoe %d steps, period=%dms, h=%d", steps, speed, height);
+        OttoOscillate(steps, speed, amp, offset, phase);
     }
 
     // Otto Jitter: A={h,h,0,0}, O={0,0,0,0}, phase={-90°,90°,0,0}, h≤25
     // Legs 180° out of phase, feet still. Leg shake.
     void Shake(int steps, int speed, int height) {
         steps = std::min(std::max(steps, 1), 10);
-        int period = std::min(std::max(speed, 200), 2000);
         height = std::min(height, 25);
 
         int amp[4] = {0, height, height, 0};
@@ -370,8 +323,8 @@ private:
             DEG2RAD(0),     // LF: foot still
         };
 
-        ESP_LOGI(TAG, "Shaking %d steps, period=%dms, h=%d", steps, period, height);
-        RunOscillation(steps, period, amp, offset, phase);
+        ESP_LOGI(TAG, "Shaking %d steps, period=%dms, h=%d", steps, speed, height);
+        OttoOscillate(steps, speed, amp, offset, phase);
     }
 
     // Otto Moonwalker: A={0,0,h,h}, O={0,0,h/2+2,-h/2-2}
@@ -379,7 +332,6 @@ private:
     // Feet only, traveling wave at 60° offset. dir: 1=left, -1=right.
     void Moonwalk(int steps, int speed, int height, int dir) {
         steps = std::min(std::max(steps, 1), 10);
-        int period = std::min(std::max(speed, 200), 2000);
         height = std::min(std::max(height, 5), 30);
 
         float phi = DEG2RAD(-dir * 90);
@@ -393,8 +345,8 @@ private:
             phi,                        // LF
         };
 
-        ESP_LOGI(TAG, "Moonwalk %d steps, period=%dms, h=%d, dir=%d", steps, period, height, dir);
-        RunOscillation(steps, period, amp, offset, phase);
+        ESP_LOGI(TAG, "Moonwalk %d steps, period=%dms, h=%d, dir=%d", steps, speed, height, dir);
+        OttoOscillate(steps, speed, amp, offset, phase);
     }
 
     // Otto Crusaito: A={25,25,h,h}, O={0,0,h/2+4,-h/2-4}
@@ -402,7 +354,6 @@ private:
     // All 4 servos. dir: 1=forward, -1=backward.
     void Crusaito(int steps, int speed, int height, int dir) {
         steps = std::min(std::max(steps, 1), 10);
-        int period = std::min(std::max(speed, 200), 2000);
         height = std::min(std::max(height, 5), 30);
 
         int amp[4] = {height, 25, 25, height};
@@ -414,8 +365,8 @@ private:
             DEG2RAD(0),          // LF: foot
         };
 
-        ESP_LOGI(TAG, "Crusaito %d steps, period=%dms, h=%d, dir=%d", steps, period, height, dir);
-        RunOscillation(steps, period, amp, offset, phase);
+        ESP_LOGI(TAG, "Crusaito %d steps, period=%dms, h=%d, dir=%d", steps, speed, height, dir);
+        OttoOscillate(steps, speed, amp, offset, phase);
     }
 
     // Otto Flapping: A={12,12,h,h}, O={0,0,h-10,-h+10}
@@ -424,7 +375,6 @@ private:
     // dir: 1=forward, -1=backward.
     void Flap(int steps, int speed, int height, int dir) {
         steps = std::min(std::max(steps, 1), 10);
-        int period = std::min(std::max(speed, 200), 2000);
         height = std::min(std::max(height, 5), 30);
 
         int amp[4] = {height, 12, 12, height};
@@ -436,15 +386,14 @@ private:
             DEG2RAD(-90 * dir),   // LF: foot (flipped from Otto's -90*dir)
         };
 
-        ESP_LOGI(TAG, "Flapping %d steps, period=%dms, h=%d, dir=%d", steps, period, height, dir);
-        RunOscillation(steps, period, amp, offset, phase);
+        ESP_LOGI(TAG, "Flapping %d steps, period=%dms, h=%d, dir=%d", steps, speed, height, dir);
+        OttoOscillate(steps, speed, amp, offset, phase);
     }
 
     // Otto AscendingTurn: A={h,h,h,h}, O={0,0,h+4,-h+4}, phase={-90°,90°,-90°,90°}, h≤13
     // All 4 servos, each pair 180° out of phase.
     void Ascend(int steps, int speed, int height) {
         steps = std::min(std::max(steps, 1), 10);
-        int period = std::min(std::max(speed, 200), 2000);
         height = std::min(height, 13);
 
         int amp[4] = {height, height, height, height};
@@ -456,8 +405,8 @@ private:
             DEG2RAD(-90),   // LF
         };
 
-        ESP_LOGI(TAG, "Ascending %d steps, period=%dms, h=%d", steps, period, height);
-        RunOscillation(steps, period, amp, offset, phase);
+        ESP_LOGI(TAG, "Ascending %d steps, period=%dms, h=%d", steps, speed, height);
+        OttoOscillate(steps, speed, amp, offset, phase);
     }
 
     // Two right turns in a row = 180° turn around
@@ -515,10 +464,13 @@ private:
     void Drunk(int tempo) {
         int m1[4] = {60, 90, 90, 70};
         int m2[4] = {110, 90, 90, 120};
+        int64_t d_t0 = esp_timer_get_time() / 1000;
         MoveNServos(tempo * 0.235, m1);
         MoveNServos(tempo * 0.235, m2);
         MoveNServos(tempo * 0.235, m1);
         MoveNServos(tempo * 0.235, m2);
+        int64_t d_elapsed = esp_timer_get_time() / 1000 - d_t0;
+        if (d_elapsed < tempo) vTaskDelay(pdMS_TO_TICKS(tempo - (int)d_elapsed));
     }
 
     void NoGravity(int tempo) {
@@ -529,6 +481,7 @@ private:
         MoveNServos(tempo * 2, m1);
         MoveNServos(tempo * 2, m2);
         vTaskDelay(pdMS_TO_TICKS(tempo * 2));
+        if (stop_requested_) return;
         MoveNServos(tempo * 2, m1);
         MoveNServos(tempo * 2, m3);
     }
@@ -577,12 +530,16 @@ private:
                 LateralFuerte(true, t/4);
                 vTaskDelay(pdMS_TO_TICKS(t));
             }
+            int64_t pp_t0 = esp_timer_get_time() / 1000;
             for (int i = 0; i < 4; i++) { servos_[i].SetPosition(90); old_pos_[i] = 90; }
             MoveNServos(t * 0.4, m1);
             MoveNServos(t * 0.4, m2);
-            vTaskDelay(pdMS_TO_TICKS(t * 2));
+            int64_t pp_elapsed = esp_timer_get_time() / 1000 - pp_t0;
+            if (pp_elapsed < t * 2) vTaskDelay(pdMS_TO_TICKS(t * 2 - (int)pp_elapsed));
+            if (stop_requested_) return;
         }
 
+        if (stop_requested_) return;
         for (int i = 0; i < 2; i++) {
             LateralFuerte(true, t/2);
             LateralFuerte(false, t/4);
@@ -590,11 +547,13 @@ private:
             vTaskDelay(pdMS_TO_TICKS(t));
         }
 
+        int64_t pp_t0 = esp_timer_get_time() / 1000;
         for (int i = 0; i < 4; i++) { servos_[i].SetPosition(90); old_pos_[i] = 90; }
         Crusaito(1, t * 1.4, 15, 1);
         MoveNServos(t * 1, m3);
         for (int i = 0; i < 4; i++) servos_[i].SetPosition(90);
-        vTaskDelay(pdMS_TO_TICKS(t * 4));
+        int64_t pp_elapsed = esp_timer_get_time() / 1000 - pp_t0;
+        if (pp_elapsed < t * 4) vTaskDelay(pdMS_TO_TICKS(t * 4 - (int)pp_elapsed));
     }
 
     void SegundaParte(int t) {
@@ -603,21 +562,20 @@ private:
         int m5[4]  = {40, 80, 100, 140};
         int m6[4]  = {40, 100, 80, 140};
 
-        for (int x = 0; x < 7; x++) {
+        for (int x = 0; x < 8; x++) {
             for (int i = 0; i < 3; i++) {
+                int64_t sp_t0 = esp_timer_get_time() / 1000;
                 MoveNServos(t * 0.15, m1); MoveNServos(t * 0.15, m2);
                 MoveNServos(t * 0.15, m1); MoveNServos(t * 0.15, m2);
-                vTaskDelay(pdMS_TO_TICKS(t));
+                int64_t sp_elapsed = esp_timer_get_time() / 1000 - sp_t0;
+                if (sp_elapsed < t) vTaskDelay(pdMS_TO_TICKS(t - (int)sp_elapsed));
             }
+            int64_t sp_t0 = esp_timer_get_time() / 1000;
             MoveNServos(t * 0.15, m5); MoveNServos(t * 0.15, m6);
             MoveNServos(t * 0.15, m1); MoveNServos(t * 0.15, m2);
-            vTaskDelay(pdMS_TO_TICKS(t));
-        }
-
-        for (int i = 0; i < 3; i++) {
-            MoveNServos(t * 0.15, m5); MoveNServos(t * 0.15, m6);
-            MoveNServos(t * 0.15, m1); MoveNServos(t * 0.15, m2);
-            vTaskDelay(pdMS_TO_TICKS(t));
+            int64_t sp_elapsed = esp_timer_get_time() / 1000 - sp_t0;
+            if (sp_elapsed < t) vTaskDelay(pdMS_TO_TICKS(t - (int)sp_elapsed));
+            if (x % 4 == 3 && stop_requested_) return;
         }
     }
 
@@ -630,59 +588,91 @@ private:
         ResetOldPositions();
         Stand();
 
+        for (int i = 0; i < 4; i++) { Drunk(t * 4); if (stop_requested_) break; }
+        if (ShouldStop()) return;
+        for (int i = 0; i < 4; i++) { Drunk(t * 4); if (stop_requested_) break; }
+        if (ShouldStop()) return;
+        for (int i = 0; i < 4; i++) { Drunk(t * 4); if (stop_requested_) break; }
+        if (ShouldStop()) return;
+        for (int i = 0; i < 4; i++) { Drunk(t * 4); if (stop_requested_) break; }
+        if (ShouldStop()) return;
+
         PrimeraParte(t);
         if (ShouldStop()) return;
         SegundaParte(t);
         if (ShouldStop()) return;
 
-        Moonwalk(4, t * 2, 30, 1);
-        Moonwalk(4, t * 2, 30, -1);
-        Moonwalk(4, t * 2, 30, 1);
-        Moonwalk(4, t * 2, 30, -1);
+        for (int i = 0; i < 2; i++) Moonwalk(4, t * 2, 30, 1);
+        if (ShouldStop()) return;
+        for (int i = 0; i < 2; i++) Moonwalk(4, t * 2, 30, -1);
         if (ShouldStop()) return;
 
         PrimeraParte(t);
         if (ShouldStop()) return;
 
-        Crusaito(1, t * 8, 30, 1);
-        Crusaito(1, t * 7, 30, 1);
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 2; i++) Crusaito(1, t * 8, 30, 1);
+        if (ShouldStop()) return;
+        for (int i = 0; i < 2; i++) Crusaito(1, t * 8, 30, 1);
+        if (ShouldStop()) return;
+        for (int i = 0; i < 16; i++) {
+            if (stop_requested_) break;
+            Flap(1, t / 4, 15, 1);
+            vTaskDelay(pdMS_TO_TICKS(3 * t / 4));
+        }
+        if (ShouldStop()) return;
+        for (int i = 0; i < 16; i++) {
             if (stop_requested_) break;
             Flap(1, t / 4, 15, 1);
             vTaskDelay(pdMS_TO_TICKS(3 * t / 4));
         }
         if (ShouldStop()) return;
 
-        Moonwalk(4, t * 2, 30, -1);
-        Moonwalk(4, t * 2, 30, 1);
-        Moonwalk(4, t * 2, 30, -1);
-        Moonwalk(4, t * 2, 30, 1);
+        for (int i = 0; i < 2; i++) Moonwalk(4, t * 2, 30, -1);
+        if (ShouldStop()) return;
+        for (int i = 0; i < 2; i++) Moonwalk(4, t * 2, 30, 1);
         if (ShouldStop()) return;
 
-        Drunk(t * 4); Drunk(t * 4); Drunk(t * 4); Drunk(t * 4);
+        for (int i = 0; i < 4; i++) { Drunk(t * 4); if (stop_requested_) break; }
+        if (ShouldStop()) return;
         KickLeft(t); KickRight(t);
-        Drunk(t * 8); Drunk(t * 4); Drunk(t / 2);
-        vTaskDelay(pdMS_TO_TICKS(t * 4));
-        Drunk(t / 2);
-        vTaskDelay(pdMS_TO_TICKS(t * 4));
+        if (ShouldStop()) return;
+        Drunk(t * 8);
+        if (ShouldStop()) return;
+        for (int i = 0; i < 3; i++) { Drunk(t * 4); if (stop_requested_) break; }
+        if (ShouldStop()) return;
+        Drunk(t); Drunk(t);
+        vTaskDelay(pdMS_TO_TICKS(t * 2));
         if (ShouldStop()) return;
 
-        Walk(2, t * 2, 1);
-        Walk(2, t * 2, -1);
+        for (int i = 0; i < 2; i++) Walk(2, t * 2, 1);
+        if (ShouldStop()) return;
+        for (int i = 0; i < 2; i++) Walk(2, t * 2, -1);
         if (ShouldStop()) return;
 
-        GoingUp(t * 2); GoingUp(t * 1);
+        GoingUp(t * 2);
+        if (ShouldStop()) return;
+        GoingUp(t * 1);
+        if (ShouldStop()) return;
         NoGravity(t * 2);
         if (ShouldStop()) return;
+        vTaskDelay(pdMS_TO_TICKS(t * 4));
+        if (ShouldStop()) return;
 
         Crusaito(1, t * 2, 30, 1);  Crusaito(1, t * 8, 30, 1);
-        Crusaito(1, t * 2, 30, 1);  Crusaito(1, t * 8, 30, 1);
+        if (ShouldStop()) return;
+        Crusaito(1, t * 2, 30, 1);  Crusaito(1, t * 4, 30, 1);
         if (ShouldStop()) return;
 
         PrimeraParte(t);
         if (ShouldStop()) return;
 
-        for (int i = 0; i < 28; i++) {
+        for (int i = 0; i < 14; i++) {
+            if (stop_requested_) break;
+            Flap(1, t / 2, 15, 1);
+            vTaskDelay(pdMS_TO_TICKS(t / 2));
+        }
+        if (ShouldStop()) return;
+        for (int i = 0; i < 14; i++) {
             if (stop_requested_) break;
             Flap(1, t / 2, 15, 1);
             vTaskDelay(pdMS_TO_TICKS(t / 2));
