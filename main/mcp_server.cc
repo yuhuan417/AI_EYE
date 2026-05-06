@@ -60,8 +60,9 @@ void McpServer::AddCommonTools() {
         });
 
     AddTool("self.audio_speaker.toggle_humming_mode",
-        "Toggle humming mode on or off. In humming mode, the robot's voice becomes wordless humming (pitch and rhythm preserved, intelligibility removed). "
-        "Use this when the user asks to hum, mumble, or speak in humming, change voice to humming, or make humming sounds.\n"
+        "Turn humming voice mode ON or OFF. When ON, voice output becomes wordless humming. "
+        "Use enabled=true when the user asks to hum, mumble, or speak in humming. "
+        "Use enabled=false when the user asks to stop humming, return to normal voice, speak normally, or cancel humming.\n"
         "Args:\n"
         "  `enabled`: true to turn humming ON, false to turn it OFF.\n",
         PropertyList({

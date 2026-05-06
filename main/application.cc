@@ -35,18 +35,6 @@
 #include <driver/gpio.h>
 #include <arpa/inet.h>
 
-extern "C" {
-struct roam_config {
-    uint8_t backoff_time;
-    bool low_rssi_roam_trigger;
-    int8_t low_rssi_threshold;
-    uint8_t rssi_threshold_reduction_offset;
-    bool scan_monitor;
-};
-esp_err_t roam_get_config_params(struct roam_config *config);
-esp_err_t roam_set_config_params(struct roam_config *config);
-}
-
 #define TAG "Application"
 
 #if defined(CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS) && (CONFIG_USE_WAKE_WORD_DETECT || CONFIG_USE_AUDIO_PROCESSOR)
@@ -486,16 +474,6 @@ void Application::Start() {
 
     /* Wait for the network to be ready */
     board.StartNetwork();
-
-    /* Configure WiFi roaming: trigger when RSSI < -60, offset to avoid flapping */
-    {
-        roam_config cfg = {};
-        roam_get_config_params(&cfg);
-        cfg.low_rssi_roam_trigger = true;
-        cfg.low_rssi_threshold = -60;
-        cfg.rssi_threshold_reduction_offset = 10;
-        roam_set_config_params(&cfg);
-    }
 
     // Update the status bar immediately to show the network state
     display->UpdateStatusBar(true);
