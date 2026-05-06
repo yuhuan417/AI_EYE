@@ -35,6 +35,18 @@
 #include <driver/gpio.h>
 #include <arpa/inet.h>
 
+extern "C" {
+struct roam_config {
+    uint8_t backoff_time;
+    bool low_rssi_roam_trigger;
+    int8_t low_rssi_threshold;
+    uint8_t rssi_threshold_reduction_offset;
+    bool scan_monitor;
+};
+esp_err_t roam_get_config_params(struct roam_config *config);
+esp_err_t roam_set_config_params(struct roam_config *config);
+}
+
 #define TAG "Application"
 
 #if defined(CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS) && (CONFIG_USE_WAKE_WORD_DETECT || CONFIG_USE_AUDIO_PROCESSOR)
@@ -474,6 +486,16 @@ void Application::Start() {
 
     /* Wait for the network to be ready */
     board.StartNetwork();
+
+    /* Configure WiFi roaming: trigger when RSSI < -60, offset to avoid flapping */
+    {
+        roam_config cfg = {};
+        roam_get_config_params(&cfg);
+        cfg.low_rssi_roam_trigger = true;
+        cfg.low_rssi_threshold = -60;
+        cfg.rssi_threshold_reduction_offset = 10;
+        roam_set_config_params(&cfg);
+    }
 
     // Update the status bar immediately to show the network state
     display->UpdateStatusBar(true);
@@ -1042,63 +1064,47 @@ bool Application::ReadAudio(std::vector<uint8_t>& opus, int sample_rate, int sam
 #endif
 
 void Application::ProcessHumming(std::vector<int16_t>& data) {
-    uint64_t _t0 = esp_timer_get_time();
-    uint64_t t0 = esp_timer_get_time();
-    static float kSinLut[256];
-    static bool lut_init = false;
-    if (!lut_init) {
-        for (int i = 0; i < 256; i++)
-            kSinLut[i] = sinf(2.0f * 3.14159265f * i / 256.0f);
-        lut_init = true;
-    }
+    // ── FFmpeg pipeline: vibrato → volume ──
+    // vibrato=f=7:d=0.6   (7Hz pitch wobble)
+    // volume=2.5          (boost)
 
     const int len = data.size();
-    const float sample_rate = 16000.0f;
+    const float fs = 16000.0f;
+    const float kPi = 3.14159265f;
 
-    float rms = 0.0f;
-    for (int i = 0; i < len; i++)
-        rms += (float)data[i] * data[i];
-    rms = sqrtf(rms / len) / 32768.0f;
+    // ── 1. Vibrato: 7Hz modulated delay (pitch wobble) ──
+    {
+        static const int kVibBuf = 1600;
+        static float vib_buf[kVibBuf] = {};
+        static int vib_pos = 0;
+        static float vib_phase = 0;
 
-    static int pitch_skip = 0;
-    if (++pitch_skip >= 3) {
-        pitch_skip = 0;
-        const int min_lag = 40;
-        const int max_lag = 240;
-        int64_t best_corr = -1;
-        int best_lag = min_lag;
-        for (int lag = min_lag; lag <= max_lag; lag += 4) {
-            int64_t corr = 0;
-            for (int i = 0; i < len - lag; i++)
-                corr += (int32_t)data[i] * (int32_t)data[i + lag];
-            if (corr > best_corr) { best_corr = corr; best_lag = lag; }
+        const float rate = 7.0f;
+        const float depth = 0.25f;
+        int max_delay = (int)(depth * 1000.0f / rate * fs / 1000.0f);
+        if (max_delay >= kVibBuf) max_delay = kVibBuf - 1;
+
+        float dph = 2.0f * kPi * rate / fs;
+        for (int i = 0; i < len; i++) {
+            vib_buf[vib_pos] = (float)data[i];
+            float offset = max_delay * 0.5f * (1.0f + sinf(vib_phase));
+            int idx = vib_pos - (int)offset;
+            if (idx < 0) idx += kVibBuf;
+            int idx2 = (idx + 1) % kVibBuf;
+            float frac = offset - (int)offset;
+            float val = vib_buf[idx] * (1.0f - frac) + vib_buf[idx2] * frac;
+            data[i] = (int16_t)std::clamp((int)val, -32768, 32767);
+            vib_pos = (vib_pos + 1) % kVibBuf;
+            vib_phase += dph;
+            if (vib_phase > 2.0f * kPi) vib_phase -= 2.0f * kPi;
         }
-        float new_pitch = sample_rate / best_lag;
-        if (new_pitch < 50.0f) new_pitch = 200.0f;
-        hum_pitch_hz_ = hum_pitch_hz_ * 0.55f + new_pitch * 0.45f;
     }
 
-    float pit = hum_pitch_hz_;
-
-    const float k2pi = 2.0f * 3.14159265f;
-    float dph = k2pi * pit / sample_rate;
-    float vol = std::min(rms * 2.8f, 0.98f);
+    // ── 3. Volume boost with soft limiter (tanh) ──
     for (int i = 0; i < len; i++) {
-        auto lut_sin = [](float p) {
-            int idx = (int)(p * 256.0f / (2.0f * 3.14159265f)) & 255;
-            return kSinLut[idx];
-        };
-        float s = lut_sin(hum_phase_) * 0.40f
-                + lut_sin(hum_phase_ * 2.0f) * 0.25f
-                + lut_sin(hum_phase_ * 3.0f) * 0.18f
-                + lut_sin(hum_phase_ * 4.0f) * 0.12f
-                + lut_sin(hum_phase_ * 5.0f) * 0.05f;
-        data[i] = (int16_t)(s * vol * 32767.0f);
-        hum_phase_ += dph;
-        if (hum_phase_ > k2pi) hum_phase_ -= k2pi;
+        float v = (float)data[i] * 2.5f / 32768.0f;  // normalize to ±2.5
+        data[i] = (int16_t)(tanhf(v * 0.7f) * 32767.0f);  // soft saturation
     }
-    uint64_t _dt = esp_timer_get_time() - _t0;
-    if (_dt > 10000) ESP_LOGW("HUMMING", "frame %d samples took %d ms", (int)data.size(), (int)(_dt / 1000));
 }
 
 void Application::SetHummingMode(bool enabled) {
