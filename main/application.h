@@ -167,6 +167,8 @@ public:
     void SendMcpMessage(const std::string& payload);
     void SetAecMode(AecMode mode);
     AecMode GetAecMode() const { return aec_mode_; }
+    void SetHummingMode(bool enabled) { humming_mode_ = enabled; }
+    bool GetHummingMode() const { return humming_mode_; }
     BackgroundTask* GetBackgroundTask() const { return background_task_; }
 
 #if defined(CONFIG_VB6824_OTA_SUPPORT) && CONFIG_VB6824_OTA_SUPPORT == 1
@@ -212,6 +214,10 @@ private:
     AecMode aec_mode_ = kAecOff;
 
     bool aborted_ = false;
+    bool humming_mode_ = false;
+    float hum_pitch_hz_ = 200.0f;
+    float hum_phase_ = 0.0f;
+    void ProcessHumming(std::vector<int16_t>& data);
     bool voice_detected_ = false;
     bool busy_decoding_audio_ = false;
     int clock_ticks_ = 0;

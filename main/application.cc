@@ -28,6 +28,7 @@
 #include "no_wake_word.h"
 #endif
 
+#include <cmath>
 #include <cstring>
 #include <esp_log.h>
 #include <cJSON.h>
@@ -1020,6 +1021,66 @@ bool Application::ReadAudio(std::vector<uint8_t>& opus, int sample_rate, int sam
 }
 #endif
 
+void Application::ProcessHumming(std::vector<int16_t>& data) {
+    uint64_t _t0 = esp_timer_get_time();
+    uint64_t t0 = esp_timer_get_time();
+    static float kSinLut[256];
+    static bool lut_init = false;
+    if (!lut_init) {
+        for (int i = 0; i < 256; i++)
+            kSinLut[i] = sinf(2.0f * 3.14159265f * i / 256.0f);
+        lut_init = true;
+    }
+
+    const int len = data.size();
+    const float sample_rate = 16000.0f;
+
+    float rms = 0.0f;
+    for (int i = 0; i < len; i++)
+        rms += (float)data[i] * data[i];
+    rms = sqrtf(rms / len) / 32768.0f;
+
+    static int pitch_skip = 0;
+    if (++pitch_skip >= 3) {
+        pitch_skip = 0;
+        const int min_lag = 40;
+        const int max_lag = 240;
+        int64_t best_corr = -1;
+        int best_lag = min_lag;
+        for (int lag = min_lag; lag <= max_lag; lag += 4) {
+            int64_t corr = 0;
+            for (int i = 0; i < len - lag; i++)
+                corr += (int32_t)data[i] * (int32_t)data[i + lag];
+            if (corr > best_corr) { best_corr = corr; best_lag = lag; }
+        }
+        float new_pitch = sample_rate / best_lag;
+        if (new_pitch < 50.0f) new_pitch = 200.0f;
+        hum_pitch_hz_ = hum_pitch_hz_ * 0.55f + new_pitch * 0.45f;
+    }
+
+    float pit = hum_pitch_hz_;
+
+    const float k2pi = 2.0f * 3.14159265f;
+    float dph = k2pi * pit / sample_rate;
+    float vol = std::min(rms * 2.8f, 0.98f);
+    for (int i = 0; i < len; i++) {
+        auto lut_sin = [](float p) {
+            int idx = (int)(p * 256.0f / (2.0f * 3.14159265f)) & 255;
+            return kSinLut[idx];
+        };
+        float s = lut_sin(hum_phase_) * 0.40f
+                + lut_sin(hum_phase_ * 2.0f) * 0.25f
+                + lut_sin(hum_phase_ * 3.0f) * 0.18f
+                + lut_sin(hum_phase_ * 4.0f) * 0.12f
+                + lut_sin(hum_phase_ * 5.0f) * 0.05f;
+        data[i] = (int16_t)(s * vol * 32767.0f);
+        hum_phase_ += dph;
+        if (hum_phase_ > k2pi) hum_phase_ -= k2pi;
+    }
+    uint64_t _dt = esp_timer_get_time() - _t0;
+    if (_dt > 10000) ESP_LOGW("HUMMING", "frame %d samples took %d ms", (int)data.size(), (int)(_dt / 1000));
+}
+
 void Application::WriteAudio(std::vector<int16_t>& data, int sample_rate) {
     auto codec = Board::GetInstance().GetAudioCodec();
     // Resample if the sample rate is different
@@ -1028,6 +1089,9 @@ void Application::WriteAudio(std::vector<int16_t>& data, int sample_rate) {
         std::vector<int16_t> resampled(target_size);
         output_resampler_.Process(data.data(), data.size(), resampled.data());
         data = std::move(resampled);
+    }
+    if (humming_mode_) {
+        ProcessHumming(data);
     }
     codec->OutputData(data);
 }

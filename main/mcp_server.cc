@@ -57,7 +57,21 @@ void McpServer::AddCommonTools() {
             codec->SetOutputVolume(properties["volume"].value<int>());
             return true;
         });
-    
+
+    AddTool("self.audio_speaker.toggle_humming_mode",
+        "Toggle humming mode on or off. In humming mode, the robot's voice becomes wordless humming (pitch and rhythm preserved, intelligibility removed). "
+        "Use this when the user asks to hum, mumble, or speak in humming, change voice to humming, or make humming sounds.\n"
+        "Args:\n"
+        "  `enabled`: true to turn humming ON, false to turn it OFF.\n",
+        PropertyList({
+            Property("enabled", kPropertyTypeBoolean)
+        }),
+        [](const PropertyList& properties) -> ReturnValue {
+            auto& app = Application::GetInstance();
+            app.SetHummingMode(properties["enabled"].value<bool>());
+            return "{\"humming_mode\": " + std::string(app.GetHummingMode() ? "true" : "false") + "}";
+        });
+
     auto backlight = board.GetBacklight();
     if (backlight) {
         AddTool("self.screen.set_brightness",
