@@ -7,6 +7,7 @@
 #include <esp_log.h>
 #include <esp_app_desc.h>
 #include <algorithm>
+#include <cmath>
 #include <chrono>
 #include <cstring>
 #include <esp_pthread.h>
@@ -143,6 +144,68 @@ void McpServer::AddCommonTools() {
                     return "{\"style\": " + std::to_string(num) + "}";
                 }
                 return "{\"error\": \"Unknown eye style: " + style + "\"}";
+            });
+
+        AddTool("self.screen.eye_control",
+            "Control the robot's eye position, blinking, and eyelid tracking. "
+            "Use this when the user asks to look in a specific direction, stare, wink, roll eyes, scan around, or change eye expression.\n"
+            "Args:\n"
+            "  `action`: `\"lock\"` to fix gaze, "
+            "`\"release\"` to return to emotion control, "
+            "`\"circle\"` to roll eyes, "
+            "`\"scan_h\"` to scan left-right, "
+            "`\"scan_v\"` to scan up-down.\n"
+            "  `x`, `y`: (lock only) gaze 0-1023, default 512.\n"
+            "  `blink`: (lock only) auto-blink on/off, default true.\n"
+            "  `track`: (lock only) eyelid tracking, default false.\n"
+            "  `amplitude`: (scan/circle) swing range 50-400, default 200.\n"
+            "  `speed`: (scan/circle) ms per cycle, default 2000.",
+            PropertyList({
+                Property("action", kPropertyTypeString),
+                Property("x", kPropertyTypeInteger, 512, 0, 1023),
+                Property("y", kPropertyTypeInteger, 512, 0, 1023),
+                Property("blink", kPropertyTypeBoolean, true),
+                Property("track", kPropertyTypeBoolean, false),
+                Property("amplitude", kPropertyTypeInteger, 200, 50, 400),
+                Property("speed", kPropertyTypeInteger, 2000, 500, 5000),
+            }),
+            [](const PropertyList& properties) -> ReturnValue {
+                auto& app = Application::GetInstance();
+                auto action = properties["action"].value<std::string>();
+                if (action == "release") {
+                    app.eye_locked_ = false;
+                    return "{\"state\": \"released\"}";
+                }
+                if (action == "circle" || action == "scan_h" || action == "scan_v") {
+                    app.eye_locked_ = true;
+                    app.is_blink = properties["blink"].value<bool>();
+                    int amp = properties["amplitude"].value<int>();
+                    int spd = properties["speed"].value<int>();
+                    std::thread([action, amp, spd]() {
+                        auto* app = &Application::GetInstance();
+                        const int steps = 60;
+                        int dly = spd / steps;
+                        for (int i = 0; app->eye_locked_; i = (i + 1) % steps) {
+                            float a = 2.0f * 3.14159265f * i / steps;
+                            if (action == "circle") {
+                                app->eyeNewX = 512 + (int)(amp * cosf(a));
+                                app->eyeNewY = 512 + (int)(amp * sinf(a));
+                            } else if (action == "scan_h") {
+                                app->eyeNewX = 512 + (int)(amp * cosf(a));
+                            } else {
+                                app->eyeNewY = 512 + (int)(amp * sinf(a));
+                            }
+                            vTaskDelay(pdMS_TO_TICKS(dly));
+                        }
+                    }).detach();
+                    return "{\"state\": \"" + action + "\"}";
+                }
+                app.eye_locked_ = true;
+                app.eyeNewX = properties["x"].value<int>();
+                app.eyeNewY = properties["y"].value<int>();
+                app.is_blink = properties["blink"].value<bool>();
+                app.is_track = properties["track"].value<bool>();
+                return "{\"state\": \"locked\"}";
             });
 #endif
     }

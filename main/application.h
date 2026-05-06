@@ -180,7 +180,8 @@ public:
  // 眼睛状态和位置
     bool is_blink;
     bool is_track;
-    bool photo_mode_;     // 拍照预览模式，暂停眼睛动画
+    bool photo_mode_;
+    bool eye_locked_ = false;  // MCP manual eye control lock     // 拍照预览模式，暂停眼睛动画
     int16_t eyeNewX;    //新眼睛位置
     int16_t eyeNewY;    //新眼睛位置
     uint8_t eye_style_num;  //眼睛样式

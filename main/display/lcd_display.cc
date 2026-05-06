@@ -1036,6 +1036,7 @@ void LcdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
         if (strcmp(emotionConfigs[i].name, emotion) == 0) {
             //ESP_LOGI(TAG,"emotion:%s,name:%s,c_eyeX:%d,c_eyeY=%d,eyeX=%d,eyeY=%d,uT=%d,lT=%d",emotion,emotionConfigs[i].name,emotionConfigs[i].eyeX,emotionConfigs[i].eyeY,eyeX,eyeY,uThreshold,lThreshold);
             auto& app = Application::GetInstance();
+            if (app.eye_locked_) break;
             //更新眼睛状态x`
             app.eyeNewX= emotionConfigs[i].eyeNewX;
             app.eyeNewY = emotionConfigs[i].eyeNewY;
