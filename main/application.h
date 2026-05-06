@@ -167,7 +167,7 @@ public:
     void SendMcpMessage(const std::string& payload);
     void SetAecMode(AecMode mode);
     AecMode GetAecMode() const { return aec_mode_; }
-    void SetHummingMode(bool enabled) { humming_mode_ = enabled; }
+    void SetHummingMode(bool enabled);
     bool GetHummingMode() const { return humming_mode_; }
     BackgroundTask* GetBackgroundTask() const { return background_task_; }
 
@@ -277,7 +277,7 @@ private:
 #endif
     void WriteAudio(std::vector<int16_t>& data, int sample_rate);
 #ifdef CONFIG_USE_AUDIO_CODEC_DECODE_OPUS
-    void WriteAudio(std::vector<uint8_t>& opus, int sample_rate);
+    void WriteAudio(std::vector<uint8_t>& opus);
 #endif
     void ResetDecoder();
     void SetDecodeSampleRate(int sample_rate, int frame_duration);

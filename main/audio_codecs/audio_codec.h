@@ -52,10 +52,10 @@ public:
     inline bool input_enabled() const { return input_enabled_; }
     inline bool output_enabled() const { return output_enabled_; }
 #ifdef CONFIG_USE_AUDIO_CODEC_ENCODE_OPUS
-    inline bool input_duration_ms() const { return input_duration_ms_; }
+    inline int input_duration_ms() const { return input_duration_ms_; }
 #endif
 #ifdef CONFIG_USE_AUDIO_CODEC_DECODE_OPUS
-    inline bool output_duration_ms() const { return output_duration_ms_; }
+    inline int output_duration_ms() const { return output_duration_ms_; }
 #endif
 
 protected:
@@ -86,7 +86,7 @@ protected:
 #endif
 
 #ifdef CONFIG_USE_AUDIO_CODEC_DECODE_OPUS
-    virtual int Write(const uint8_t* opus, int samples) = 0
+    virtual int Write(const uint8_t* opus, int samples) = 0;
 #endif
 };
 

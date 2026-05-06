@@ -19,7 +19,7 @@ private:
 #endif
     virtual int Write(const int16_t* data, int samples) override;
 #ifdef CONFIG_USE_AUDIO_CODEC_DECODE_OPUS
-    virtual int Write(uint8_t* opus, int samples) override;
+    virtual int Write(const uint8_t* opus, int samples) override;
 #endif
     std::function<void(std::string)> on_wake_up_;
     bool frist_volume_is_set = false;

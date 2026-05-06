@@ -216,19 +216,13 @@ int VbAduioCodec::Write(const int16_t* data, int samples) {
 }
 
 #ifdef CONFIG_USE_AUDIO_CODEC_DECODE_OPUS
-int VbAduioCodec::Write(uint8_t* opus, int samples) {
+int VbAduioCodec::Write(const uint8_t* opus, int samples) {
     if(frist_volume_is_set == false){
         frist_volume_is_set = true;
         SetOutputVolume(output_volume_);
     }
-    vb6824_audio_write((uint8_t *)data, samples);
+    vb6824_audio_write((uint8_t *)opus, samples);
     return samples;
 }
 
-bool ConfigDecode(int sample_rate, int channels, int duration_ms) {
-    input_sample_rate_ = sample_rate;
-    input_channels_ = channels;
-    duration_ms_ = duration_ms;
-    return true;
-}
 #endif

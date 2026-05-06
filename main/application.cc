@@ -442,6 +442,12 @@ void Application::Start() {
     }
     codec->Start();
 
+    // Restore humming mode from NVS
+    {
+        Settings settings("audio", false);
+        humming_mode_ = settings.GetInt("humming_mode", 0) != 0;
+    }
+
 #if CONFIG_USE_AUDIO_PROCESSOR
     xTaskCreatePinnedToCore([](void* arg) {
         Application* app = (Application*)arg;
@@ -878,13 +884,27 @@ void Application::OnAudioOutput() {
             return;
         }
 #ifdef CONFIG_USE_AUDIO_CODEC_DECODE_OPUS
-        WriteAudio(packet.payload);
+        if (humming_mode_) {
+            std::vector<int16_t> pcm;
+            if (!opus_decoder_->Decode(std::move(packet.payload), pcm)) {
+                return;
+            }
+            WriteAudio(pcm, opus_decoder_->sample_rate());
+            static bool hum_logged = false;
+            if (!hum_logged) { ESP_LOGI("AUDIO", "decode: software (humming mode)"); hum_logged = true; }
+        } else {
+            WriteAudio(packet.payload);
+            static bool hw_logged = false;
+            if (!hw_logged) { ESP_LOGI("AUDIO", "decode: hardware (VB6824)"); hw_logged = true; }
+        }
 #else
         std::vector<int16_t> pcm;
         if (!opus_decoder_->Decode(std::move(packet.payload), pcm)) {
             return;
         }
         WriteAudio(pcm, opus_decoder_->sample_rate());
+            static bool sw_logged = false;
+            if (!sw_logged) { ESP_LOGI("AUDIO", "decode: software"); sw_logged = true; }
 #endif
 #ifdef CONFIG_USE_SERVER_AEC
         std::lock_guard<std::mutex> lock(timestamp_mutex_);
@@ -1079,6 +1099,12 @@ void Application::ProcessHumming(std::vector<int16_t>& data) {
     }
     uint64_t _dt = esp_timer_get_time() - _t0;
     if (_dt > 10000) ESP_LOGW("HUMMING", "frame %d samples took %d ms", (int)data.size(), (int)(_dt / 1000));
+}
+
+void Application::SetHummingMode(bool enabled) {
+    humming_mode_ = enabled;
+    Settings settings("audio", true);
+    settings.SetInt("humming_mode", enabled ? 1 : 0);
 }
 
 void Application::WriteAudio(std::vector<int16_t>& data, int sample_rate) {
