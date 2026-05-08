@@ -37,6 +37,8 @@ private:
     esp_lcd_panel_io_handle_t lcd_io1 = NULL;
     esp_lcd_panel_handle_t lcd_panel1 = NULL;
 
+    // display2 is physically mirrored from display1 on the current hardware,
+    // so keep the second display path disabled to avoid redundant work.
     esp_lcd_panel_io_handle_t lcd_io2 = NULL;
     esp_lcd_panel_handle_t lcd_panel2 = NULL;
 
@@ -172,55 +174,6 @@ private:
         esp_lcd_panel_disp_on_off(lcd_panel1, true);
     }
 
-    // wang
-    //  GC9A01-SPI2初始化-用于显示小智
-    void InitializeSpiEye2()
-    {
-        const spi_bus_config_t buscfg = {
-            .mosi_io_num = GC9A01_SPI2_LCD_GPIO_MOSI,
-            .miso_io_num = GPIO_NUM_NC,
-            .sclk_io_num = GC9A01_SPI2_LCD_GPIO_SCLK,
-            .quadwp_io_num = GPIO_NUM_NC,
-            .quadhd_io_num = GPIO_NUM_NC,
-            .max_transfer_sz = DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(uint16_t), // 增大传输大小,
-        };
-        ESP_ERROR_CHECK(spi_bus_initialize(DISPLAY_SPI2_NUM, &buscfg, SPI_DMA_CH_AUTO));
-    }
-
-    // GC9A01-SPI2初始化-用于显示魔眼
-    void InitializeGc9a01DisplayEye2()
-    {
-        ESP_LOGI(TAG, "Init GC9A01 display2");
-
-        ESP_LOGI(TAG, "Install panel IO2");
-
-        const esp_lcd_panel_io_spi_config_t io_config = {
-            .cs_gpio_num = GC9A01_SPI2_LCD_GPIO_CS,
-            .dc_gpio_num = GC9A01_SPI2_LCD_GPIO_DC,
-            .spi_mode = 0,
-            .pclk_hz = GC9A01_LCD_PIXEL_CLK_HZ,
-            .trans_queue_depth = 10,
-            .lcd_cmd_bits = GC9A01_LCD_CMD_BITS,
-            .lcd_param_bits = GC9A01_LCD_PARAM_BITS,
-
-        };
-        esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)DISPLAY_SPI2_NUM, &io_config, &lcd_io2);
-
-        ESP_LOGD(TAG, "Install LCD2 driver");
-        esp_lcd_panel_dev_config_t panel_config = {
-            .reset_gpio_num = GC9A01_SPI2_LCD_GPIO_RST,
-            .color_space = GC9A01_LCD_COLOR_SPACE,
-            .bits_per_pixel = GC9A01_LCD_BITS_PER_PIXEL,
-
-        };
-        panel_config.rgb_endian = DISPLAY_RGB_ORDER;
-        esp_lcd_new_panel_gc9a01(lcd_io2, &panel_config, &lcd_panel2);
-
-        esp_lcd_panel_reset(lcd_panel2);
-        esp_lcd_panel_init(lcd_panel2);
-        esp_lcd_panel_invert_color(lcd_panel2, DISPLAY_COLOR_INVERT);
-        esp_lcd_panel_disp_on_off(lcd_panel2, true);
-    }
     void InitializeCamera()
     {
         // Open camera power
@@ -259,13 +212,14 @@ private:
     // 初始化双屏
     void InitializeDualScreenEye()
     {
-        // 初始化第一块屏幕
+        // Only initialize display1. On the current hardware the second panel
+        // is hard-wired to mirror the same signal, so a separate SPI2/panel2
+        // path only burns cycles without changing the image.
         InitializeSpiEye1();
-        InitializeSpiEye2();
         InitializeGc9a01DisplayEye1();
-        InitializeGc9a01DisplayEye2();
 #if CONFIG_LCD_GC9A01_240X240
-    // 创建双屏显示对象
+    // Keep using the existing board-specific display class, but leave the
+    // second panel null so all display2 refreshes are skipped at runtime.
         display_ = new DualScreenDisplay(
             lcd_io1, lcd_panel1,
             lcd_io2, lcd_panel2,
@@ -277,7 +231,8 @@ private:
                 .emoji_font = font_emoji_64_init(),
             });
 #elif CONFIG_LCD_GC9A01_160X160
-     // 创建双屏显示对象
+        // Keep using the existing board-specific display class, but leave the
+        // second panel null so all display2 refreshes are skipped at runtime.
         display_ = new DualScreenDisplay(
             lcd_io1, lcd_panel1,
             lcd_io2, lcd_panel2,

@@ -1058,7 +1058,9 @@ void LcdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
         if (Application::GetInstance().photo_mode_) return;
         esp_lcd_panel_draw_bitmap(panel_, x_start, y_start, x_end, y_end, color_data);
         #if CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824
-            esp_lcd_panel_draw_bitmap(panel_2, x_start, y_start, x_end, y_end, color_data);
+            if (panel_2 != nullptr) {
+                esp_lcd_panel_draw_bitmap(panel_2, x_start, y_start, x_end, y_end, color_data);
+            }
         #endif
     }
     #endif
