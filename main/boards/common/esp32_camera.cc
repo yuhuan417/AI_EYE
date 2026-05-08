@@ -115,13 +115,21 @@ bool Esp32Camera::Capture() {
     // 显示预览图片
     auto display = Board::GetInstance().GetDisplay();
     if (display != nullptr) {
-        auto src = (uint16_t*)fb_->buf;
-        auto dst = (uint16_t*)preview_image_.data;
+        auto src = (const uint8_t*)fb_->buf;
+        auto dst = (uint8_t*)preview_image_.data;
+#if CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824
+        // Eye preview is drawn directly to the LCD panels, so keep the
+        // original camera RGB565 byte order untouched.
+        memcpy(dst, src, fb_->len);
+#else
+        auto src16 = (const uint16_t*)src;
+        auto dst16 = (uint16_t*)dst;
         size_t pixel_count = fb_->len / 2;
         for (size_t i = 0; i < pixel_count; i++) {
-            // 交换每个16位字内的字节
-            dst[i] = __builtin_bswap16(src[i]);
+            // LVGL preview expects the RGB565 bytes swapped on these paths.
+            dst16[i] = __builtin_bswap16(src16[i]);
         }
+#endif
         display->SetPreviewImage(&preview_image_);
     }
     return true;

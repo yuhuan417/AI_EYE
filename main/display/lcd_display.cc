@@ -847,9 +847,9 @@ void LcdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
             int sy = src_y0 + (y_start + y) * square / dst_h;
             for (int x = 0; x < dst_w; x++) {
                 int sx = src_x0 + x * square / dst_w;
-                // bswap16: Capture() byte-swapped camera data for LVGL;
-                // esp_lcd_panel_draw_bitmap expects big-endian, so swap back.
-                strip[y * dst_w + x] = __builtin_bswap16(src[sy * src_w + sx]);
+                // The eye preview path samples directly from the raw camera
+                // RGB565 frame, so keep the source byte order unchanged.
+                strip[y * dst_w + x] = src[sy * src_w + sx];
             }
         }
         esp_lcd_panel_draw_bitmap(panel_, 0, y_start, dst_w, y_start + lines, strip);
