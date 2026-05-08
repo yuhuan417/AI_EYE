@@ -23,6 +23,7 @@ private:
     std::string explain_url_;
     std::string explain_token_;
     std::thread encoder_thread_;
+    std::thread preview_thread_;
 
 public:
     Esp32Camera(const camera_config_t& config);

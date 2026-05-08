@@ -231,9 +231,15 @@ void McpServer::AddCommonTools() {
                     return "{\"success\": false, \"message\": \"Failed to capture photo\"}";
                 }
 
-                // Restore eyes after 3 seconds in background
-                std::thread([display]() {
-                    std::this_thread::sleep_for(std::chrono::seconds(3));
+#if CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824
+                constexpr auto kPreviewRestoreDelay = std::chrono::seconds(4);
+#else
+                constexpr auto kPreviewRestoreDelay = std::chrono::seconds(3);
+#endif
+
+                // Restore eyes after the preview animation finishes.
+                std::thread([display, kPreviewRestoreDelay]() {
+                    std::this_thread::sleep_for(kPreviewRestoreDelay);
                     auto& app = Application::GetInstance();
                     app.photo_mode_ = false;
                     if (display) {

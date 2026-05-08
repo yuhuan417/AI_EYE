@@ -60,14 +60,26 @@ Esp32Camera::Esp32Camera(const camera_config_t& config) {
 
     preview_image_.header.stride = preview_image_.header.w * 2;
     preview_image_.data_size = preview_image_.header.w * preview_image_.header.h * 2;
+#if CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824
+    // Eye preview renders directly from the camera frame buffer, so it does
+    // not need a second full-size RGB565 staging buffer.
+    preview_image_.data = nullptr;
+#else
     preview_image_.data = (uint8_t*)heap_caps_malloc(preview_image_.data_size, MALLOC_CAP_SPIRAM);
     if (preview_image_.data == nullptr) {
         ESP_LOGE(TAG, "Failed to allocate memory for preview image");
         return;
     }
+#endif
 }
 
 Esp32Camera::~Esp32Camera() {
+    if (preview_thread_.joinable()) {
+        preview_thread_.join();
+    }
+    if (encoder_thread_.joinable()) {
+        encoder_thread_.join();
+    }
     if (fb_) {
         esp_camera_fb_return(fb_);
         fb_ = nullptr;
@@ -87,6 +99,9 @@ void Esp32Camera::SetExplainUrl(const std::string& url, const std::string& token
 bool Esp32Camera::Capture() {
     if (encoder_thread_.joinable()) {
         encoder_thread_.join();
+    }
+    if (preview_thread_.joinable()) {
+        preview_thread_.join();
     }
 
     int frames_to_get = 2;
@@ -108,20 +123,28 @@ bool Esp32Camera::Capture() {
         ESP_LOGW(TAG, "Skip preview because of unsupported frame size");
         return true;
     }
+#if !(CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824)
     if (preview_image_.data == nullptr) {
         ESP_LOGE(TAG, "Preview image data is not initialized");
         return true;
     }
-    // 显示预览图片
+#endif
+
     auto display = Board::GetInstance().GetDisplay();
     if (display != nullptr) {
         auto src = (const uint8_t*)fb_->buf;
-        auto dst = (uint8_t*)preview_image_.data;
 #if CONFIG_USE_EYE_STYLE_ES8311 || CONFIG_USE_EYE_STYLE_VB6824
-        // Eye preview is drawn directly to the LCD panels, so keep the
-        // original camera RGB565 byte order untouched.
-        memcpy(dst, src, fb_->len);
+        lv_img_dsc_t preview_frame = preview_image_;
+        if (preview_frame.header.h > 0) {
+            preview_frame.header.stride = fb_->len / preview_frame.header.h;
+        }
+        preview_frame.data = src;
+        preview_frame.data_size = fb_->len;
+        preview_thread_ = std::thread([display, preview_frame]() {
+            display->SetPreviewImage(&preview_frame);
+        });
 #else
+        auto dst = (uint8_t*)preview_image_.data;
         auto src16 = (const uint16_t*)src;
         auto dst16 = (uint16_t*)dst;
         size_t pixel_count = fb_->len / 2;
@@ -129,8 +152,8 @@ bool Esp32Camera::Capture() {
             // LVGL preview expects the RGB565 bytes swapped on these paths.
             dst16[i] = __builtin_bswap16(src16[i]);
         }
-#endif
         display->SetPreviewImage(&preview_image_);
+#endif
     }
     return true;
 }

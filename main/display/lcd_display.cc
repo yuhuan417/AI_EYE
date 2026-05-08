@@ -9,6 +9,7 @@
 #include <esp_heap_caps.h>
 #include "assets/lang_config.h"
 #include <cstring>
+#include <cmath>
 #include "settings.h"
 
 #include "board.h"
@@ -70,6 +71,54 @@ const ThemeColors LIGHT_THEME = {
 
 
 LV_FONT_DECLARE(font_awesome_30_4);
+
+namespace {
+
+constexpr int kEyePreviewFracBits = 6;
+constexpr int kEyePreviewFracScale = 1 << kEyePreviewFracBits;
+constexpr int kEyePreviewCenterHoldMs = 1000;
+constexpr int kEyePreviewPanMs = 2000;
+constexpr int kEyePreviewReturnHoldMs = 1000;
+constexpr int kEyePreviewFrameMs = 50;
+constexpr float kEyePreviewTwoPi = 6.28318530718f;
+
+inline uint16_t SampleRgb565Bilinear(const uint16_t* src, int src_stride, int src_x0, int src_y0, int wx, int wy) {
+    int inv_wx = kEyePreviewFracScale - wx;
+    int inv_wy = kEyePreviewFracScale - wy;
+
+    const uint16_t* row0 = src + src_y0 * src_stride + src_x0;
+    const uint16_t* row1 = row0 + src_stride;
+    // The eye path keeps the camera's raw RGB565 byte order so the panel can
+    // DMA it directly. Decode to host-order for interpolation, then swap back
+    // before writing the destination strip.
+    uint16_t p00 = __builtin_bswap16(row0[0]);
+    uint16_t p10 = __builtin_bswap16(row0[1]);
+    uint16_t p01 = __builtin_bswap16(row1[0]);
+    uint16_t p11 = __builtin_bswap16(row1[1]);
+
+    uint32_t w00 = static_cast<uint32_t>(inv_wx * inv_wy);
+    uint32_t w10 = static_cast<uint32_t>(wx * inv_wy);
+    uint32_t w01 = static_cast<uint32_t>(inv_wx * wy);
+    uint32_t w11 = static_cast<uint32_t>(wx * wy);
+
+    uint32_t r = (((p00 >> 11) & 0x1Fu) * w00 +
+                  ((p10 >> 11) & 0x1Fu) * w10 +
+                  ((p01 >> 11) & 0x1Fu) * w01 +
+                  ((p11 >> 11) & 0x1Fu) * w11 + 2048u) >> 12;
+    uint32_t g = (((p00 >> 5) & 0x3Fu) * w00 +
+                  ((p10 >> 5) & 0x3Fu) * w10 +
+                  ((p01 >> 5) & 0x3Fu) * w01 +
+                  ((p11 >> 5) & 0x3Fu) * w11 + 2048u) >> 12;
+    uint32_t b = ((p00 & 0x1Fu) * w00 +
+                  (p10 & 0x1Fu) * w10 +
+                  (p01 & 0x1Fu) * w01 +
+                  (p11 & 0x1Fu) * w11 + 2048u) >> 12;
+
+    uint16_t blended = static_cast<uint16_t>((r << 11) | (g << 5) | b);
+    return __builtin_bswap16(blended);
+}
+
+}  // namespace
 
 
  #if CONFIG_BOARD_TYPE_DOIT_ESP32S3_EYE_8311||CONFIG_BOARD_TYPE_DOIT_ESP32S3_EYE_6824
@@ -826,40 +875,133 @@ void LcdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
     int src_h = img_dsc->header.h;
     int dst_w = width_;
     int dst_h = height_;
-
-    // Crop source to a square, then scale down to fit the eye display
-    int square = (src_w < src_h) ? src_w : src_h;
-    int src_x0 = (src_w - square) / 2;
-    int src_y0 = (src_h - square) / 2;
+    int scaled_h = dst_h;
+    int scaled_w = (src_w * scaled_h + src_h / 2) / src_h;
+    if (scaled_w < 1) {
+        scaled_w = 1;
+    }
 
     const int batch_lines = 10;
-    size_t strip_size = batch_lines * dst_w * sizeof(uint16_t);
-    uint16_t* strip = (uint16_t*)heap_caps_malloc(strip_size, MALLOC_CAP_DMA);
-    if (strip == nullptr) {
-        ESP_LOGE(TAG, "Failed to allocate strip buffer for preview");
+    size_t strip_size = static_cast<size_t>(batch_lines) * dst_w * sizeof(uint16_t);
+    uint16_t* strip_buf[2];
+    strip_buf[0] = static_cast<uint16_t*>(malloc(strip_size));
+    strip_buf[1] = static_cast<uint16_t*>(malloc(strip_size));
+    if (strip_buf[0] == nullptr || strip_buf[1] == nullptr) {
+        ESP_LOGE(TAG, "Failed to allocate preview strip buffers");
+        if (strip_buf[0] != nullptr) {
+            free(strip_buf[0]);
+        }
+        if (strip_buf[1] != nullptr) {
+            free(strip_buf[1]);
+        }
         return;
     }
 
+    int src_stride = img_dsc->header.stride / static_cast<int>(sizeof(uint16_t));
+    if (src_stride < src_w) {
+        src_stride = src_w;
+    }
+
     const uint16_t* src = (const uint16_t*)img_dsc->data;
-    for (int y_start = 0; y_start < dst_h; y_start += batch_lines) {
-        int lines = (dst_h - y_start) < batch_lines ? (dst_h - y_start) : batch_lines;
-        for (int y = 0; y < lines; y++) {
-            int sy = src_y0 + (y_start + y) * square / dst_h;
-            for (int x = 0; x < dst_w; x++) {
-                int sx = src_x0 + x * square / dst_w;
-                // The eye preview path samples directly from the raw camera
-                // RGB565 frame, so keep the source byte order unchanged.
-                strip[y * dst_w + x] = src[sy * src_w + sx];
-            }
+    uint16_t* scaled_frame = static_cast<uint16_t*>(heap_caps_malloc(
+        static_cast<size_t>(scaled_w) * scaled_h * sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (scaled_frame == nullptr) {
+        scaled_frame = static_cast<uint16_t*>(heap_caps_malloc(
+            static_cast<size_t>(scaled_w) * scaled_h * sizeof(uint16_t), MALLOC_CAP_8BIT));
+    }
+    if (scaled_frame == nullptr) {
+        ESP_LOGE(TAG, "Failed to allocate scaled preview frame");
+        free(strip_buf[0]);
+        free(strip_buf[1]);
+        return;
+    }
+
+    for (int y = 0; y < scaled_h; ++y) {
+        float src_yf = ((static_cast<float>(y) + 0.5f) * src_h / scaled_h) - 0.5f;
+        if (src_yf < 0.0f) {
+            src_yf = 0.0f;
+        } else if (src_yf > static_cast<float>(src_h - 2)) {
+            src_yf = static_cast<float>(src_h - 2);
         }
-        esp_lcd_panel_draw_bitmap(panel_, 0, y_start, dst_w, y_start + lines, strip);
-        if (panel_2 != nullptr) {
-            esp_lcd_panel_draw_bitmap(panel_2, 0, y_start, dst_w, y_start + lines, strip);
+        int src_y0 = static_cast<int>(src_yf);
+        int wy = static_cast<int>((src_yf - static_cast<float>(src_y0)) * kEyePreviewFracScale + 0.5f);
+        if (wy >= kEyePreviewFracScale) {
+            wy = kEyePreviewFracScale - 1;
+        }
+
+        for (int x = 0; x < scaled_w; ++x) {
+            float src_xf = ((static_cast<float>(x) + 0.5f) * src_w / scaled_w) - 0.5f;
+            if (src_xf < 0.0f) {
+                src_xf = 0.0f;
+            } else if (src_xf > static_cast<float>(src_w - 2)) {
+                src_xf = static_cast<float>(src_w - 2);
+            }
+            int src_x0 = static_cast<int>(src_xf);
+            int wx = static_cast<int>((src_xf - static_cast<float>(src_x0)) * kEyePreviewFracScale + 0.5f);
+            if (wx >= kEyePreviewFracScale) {
+                wx = kEyePreviewFracScale - 1;
+            }
+            scaled_frame[y * scaled_w + x] = SampleRgb565Bilinear(src, src_stride, src_x0, src_y0, wx, wy);
         }
     }
 
-    heap_caps_free(strip);
-    ESP_LOGI(TAG, "Preview image shown on eye display (%dx%d)", dst_w, dst_h);
+    const int max_offset = scaled_w > dst_w ? (scaled_w - dst_w) : 0;
+    const int center_offset = max_offset / 2;
+    const int left_padding = scaled_w < dst_w ? (dst_w - scaled_w) / 2 : 0;
+    auto render_window = [&](int window_x) {
+        int copy_x = std::max(0, std::min(window_x, max_offset));
+        uint8_t buf_idx = 0;
+        for (int y_start = 0; y_start < dst_h; y_start += batch_lines) {
+            uint16_t* strip = strip_buf[buf_idx];
+            buf_idx ^= 1;
+            int lines = (dst_h - y_start) < batch_lines ? (dst_h - y_start) : batch_lines;
+            if (scaled_w < dst_w) {
+                memset(strip, 0, static_cast<size_t>(lines) * dst_w * sizeof(uint16_t));
+            }
+            for (int y = 0; y < lines; ++y) {
+                const uint16_t* src_row = scaled_frame + (y_start + y) * scaled_w;
+                uint16_t* dst_row = strip + y * dst_w;
+                if (scaled_w >= dst_w) {
+                    memcpy(dst_row, src_row + copy_x, static_cast<size_t>(dst_w) * sizeof(uint16_t));
+                } else {
+                    memcpy(dst_row + left_padding, src_row, static_cast<size_t>(scaled_w) * sizeof(uint16_t));
+                }
+            }
+            esp_lcd_panel_draw_bitmap(panel_, 0, y_start, dst_w, y_start + lines, strip);
+            if (panel_2 != nullptr) {
+                esp_lcd_panel_draw_bitmap(panel_2, 0, y_start, dst_w, y_start + lines, strip);
+            }
+        }
+    };
+
+    render_window(center_offset);
+    vTaskDelay(pdMS_TO_TICKS(kEyePreviewCenterHoldMs));
+
+    if (max_offset > 0) {
+        float amplitude = static_cast<float>(max_offset) * 0.5f;
+        for (int elapsed_ms = kEyePreviewFrameMs; elapsed_ms <= kEyePreviewPanMs; elapsed_ms += kEyePreviewFrameMs) {
+            if (!Application::GetInstance().photo_mode_) {
+                break;
+            }
+            float phase = static_cast<float>(elapsed_ms) / static_cast<float>(kEyePreviewPanMs);
+            int offset = center_offset - static_cast<int>(std::lround(std::sin(phase * kEyePreviewTwoPi) * amplitude));
+            render_window(offset);
+            vTaskDelay(pdMS_TO_TICKS(kEyePreviewFrameMs));
+        }
+    } else {
+        vTaskDelay(pdMS_TO_TICKS(kEyePreviewPanMs));
+    }
+
+    if (Application::GetInstance().photo_mode_) {
+        render_window(center_offset);
+        vTaskDelay(pdMS_TO_TICKS(kEyePreviewReturnHoldMs));
+    }
+
+    free(strip_buf[0]);
+    free(strip_buf[1]);
+    heap_caps_free(scaled_frame);
+    ESP_LOGI(TAG, "Preview image shown on eye display with pan animation (%dx%d from %dx%d)",
+             dst_w, dst_h, scaled_w, scaled_h);
 }
 #else
 void LcdDisplay::SetupUI() {
