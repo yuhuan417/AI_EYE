@@ -1,5 +1,49 @@
 # RoPet_ESPS3_AI_EYE
 
+## 当前版本更新
+
+这一章只补充当前工程相对原 README 已经新增和验证过的能力，下面原始 README 内容完整保留。
+
+### 当前重点支持
+
+- 主要开发和验证板型：`doit-esp32s3-eye-6824`、`doit-esp32s3-eye-8311`
+- 已支持圆屏：`GC9A01 240x240`（1.28 寸）、`GC9A01 160x160`（0.71 寸）
+- 当前工程已包含语音、视觉、表情、舵机动作、MCP 控制和 OTA 的完整链路
+
+### 已新增的主要功能
+
+- 支持 `MQTT` 和 `WebSocket` 两种协议配置下发
+- 支持 OTA 激活、配置拉取和固件升级
+- 支持设备端 AEC 和服务器端 AEC 切换
+- 支持哼唱模式，TTS 可切换为无词哼唱，并保存到 NVS
+- 支持 13 种眼球风格切换，并支持眼球锁定、扫描、转圈控制
+- 支持相机拍照、图片理解、拍照后眼屏预览
+- 0.71 寸预览图当前采用“保留原图比例，居中停留，左右扫视，再回中间停留”的显示方式
+- 支持 4 舵机基础动作、步态动作以及两套完整舞蹈：`Smooth Criminal`、`Single Ladies`
+- 已集成本地 `Helix MP3` 解码器用于舞蹈音乐播放
+
+### 已开放的 MCP 能力
+
+- `self.get_device_status`
+- `self.audio_speaker.set_volume`
+- `self.audio_speaker.toggle_humming_mode`
+- `self.screen.set_brightness`
+- `self.screen.set_theme`
+- `self.screen.eye_style`
+- `self.screen.eye_control`
+- `self.camera.take_photo`
+- `self.servo.stand` / `rest` / `walk` / `turn` / `turn_around`
+- `self.servo.bounce` / `sway` / `tiptoe` / `shake`
+- `self.servo.moonwalk` / `crusaito` / `flap` / `ascend`
+- `self.servo.dance_smooth_criminal`
+- `self.servo.dance_single_ladies`
+- `self.servo.stop`
+
+### 当前建议查看的文档
+
+- `docs/build_and_config.md`：当前板型构建与关键配置说明
+- `docs/otto_servo_mapping.md`：Otto 动作到本项目舵机映射参考
+
 *   首先致谢虾哥的开源项目：https://github.com/78/xiaozhi-esp32
 *   其次致谢：https://github.com/xinnan-tech/xiaozhi-esp32-server
 
