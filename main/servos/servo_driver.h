@@ -18,6 +18,7 @@ public:
 
     void Attach(int pin, ledc_channel_t channel, bool rev = false);
     void Detach();
+    void SetTrim(int trim) { trim_ = trim; }
     void SetPosition(int position);
     void SetAngle(int angle);
     int GetPosition() { return pos_; }

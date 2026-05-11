@@ -34,13 +34,46 @@ static const char* TAG = "ServoController";
 static std::atomic<bool> music_playing_{false};
 static const int kServoGpios[4] = {11, 12, 13, 14};
 static const ledc_channel_t kServoChannels[4] = {LEDC_CHANNEL_1, LEDC_CHANNEL_2, LEDC_CHANNEL_3, LEDC_CHANNEL_4};
+static const int kServoTrims[4] = {5, 0, 0, 10};
+
+class TrimmedServoDriver {
+public:
+    void Attach(int pin, ledc_channel_t channel, int trim, bool rev = false) {
+        trim_ = trim;
+        logical_pos_ = 90;
+        driver_.Attach(pin, channel, rev);
+    }
+
+    void Detach() {
+        driver_.Detach();
+    }
+
+    void SetPosition(int position) {
+        logical_pos_ = std::min(std::max(position, 0), 180);
+        driver_.SetPosition(logical_pos_ + trim_);
+    }
+
+    void SetAngle(int angle) {
+        SetPosition(angle);
+    }
+
+    int GetPosition() const {
+        return logical_pos_;
+    }
+
+private:
+    ServoDriver driver_;
+    int trim_ = 0;
+    int logical_pos_ = 90;
+};
 
 class ServoController {
 public:
     ServoController() {
         for (int i = 0; i < 4; i++) {
-            servos_[i].Attach(kServoGpios[i], kServoChannels[i]);
+            servos_[i].Attach(kServoGpios[i], kServoChannels[i], kServoTrims[i]);
             servos_[i].SetPosition(90);
+            old_pos_[i] = 90;
         }
 
         RegisterMcpTools();
@@ -53,7 +86,7 @@ public:
     }
 
 private:
-    ServoDriver servos_[4];
+    TrimmedServoDriver servos_[4];
     int old_pos_[4];
     std::atomic<bool> stop_requested_{false};
 
@@ -82,26 +115,46 @@ private:
     void Stand() {
         for (int i = 0; i < 4; i++) {
             servos_[i].SetPosition(90);
+            old_pos_[i] = 90;
         }
     }
 
-    // Pure sinusoidal oscillation — matching Otto's oscillate().
-    // No ramp in/out, no period clamp, 30ms sampling (Otto default).
-    // Arrays are in OUR servo order: [RF, RL, LL, LF].
+    // Otto-style oscillation: sample the sine wave every 30ms, but interpolate
+    // all 4 servos across that sample window instead of jumping once per sample.
+    // `phase_bias` lets a motion enter the gait from a more stable point in the
+    // cycle, and `preload_to_start` moves there smoothly before oscillation.
     void OttoOscillate(int steps, int T, const int amp[4],
-                       const int offset[4], const float phase[4]) {
+                       const int offset[4], const float phase[4],
+                       float phase_bias = 0.0f,
+                       bool preload_to_start = false) {
         const int kSampleMs = 30;
         int samples = T / kSampleMs;
         if (samples < 1) samples = 1;
         const float kPi = 3.14159265f;
         float dphase = 2.0f * kPi / samples;
+        int positions[4];
+
+        if (preload_to_start) {
+            for (int j = 0; j < 4; j++) {
+                positions[j] =
+                    90 + offset[j] + (int)std::lround(amp[j] * std::sin(phase_bias + phase[j]));
+            }
+            MoveNServos(std::max(kSampleMs * 3, T / 6), positions);
+        }
 
         for (int s = 0; s < steps; s++) {
             for (int i = 0; i < samples; i++) {
-                float p = i * dphase;
-                for (int j = 0; j < 4; j++)
-                    servos_[j].SetPosition(90 + offset[j] + (int)(amp[j] * std::sin(p + phase[j])));
-                vTaskDelay(pdMS_TO_TICKS(kSampleMs));
+                if (stop_requested_) {
+                    Stand();
+                    return;
+                }
+
+                float p = phase_bias + i * dphase;
+                for (int j = 0; j < 4; j++) {
+                    positions[j] =
+                        90 + offset[j] + (int)std::lround(amp[j] * std::sin(p + phase[j]));
+                }
+                MoveNServos(kSampleMs, positions);
             }
         }
 
@@ -109,7 +162,7 @@ private:
     }
 
     // Otto: A={30,30,30,30}, O={0,0,5,-5}, phase={0,0,-90°*dir,-90°*dir}
-    // Our forward needs +90° for feet (flip sign).
+    // Feet phase is flipped relative to Otto because our foot installation is mirrored.
     void Walk(int steps, int speed, int dir) {
         steps = std::min(std::max(steps, 1), 10);
 
@@ -123,6 +176,12 @@ private:
         };
 
         ESP_LOGI(TAG, "Walking %d steps, period=%dms, dir=%d", steps, speed, dir);
+        if (dir > 0) {
+            // Forward: rely on the global left-foot trim and only keep the
+            // stabilized gait entry phase.
+            OttoOscillate(steps, speed, amp, offset, phase, DEG2RAD(90), true);
+            return;
+        }
         OttoOscillate(steps, speed, amp, offset, phase);
     }
 
@@ -130,32 +189,33 @@ private:
     // Otto LEFT  (dir= 1): LL=30, RL= 0  — left leg swings, pivots around right leg
     // Otto RIGHT (dir=-1): LL= 0, RL=30  — right leg swings, pivots around left leg
     //
-    // IMPORTANT: turn uses Otto's original foot phase (-90°) instead of our
-    // walk's flipped +90°.  Only one leg is swinging, so the foot must press
-    // (grip) when the swinging leg passes through neutral to provide a pivot.
-    // With +90° timing the foot lifts at neutral and the robot can't turn.
+    // User-validated on this chassis: the practical left/right mapping is
+    // inverted relative to the nominal branch labels, so swap the hip-swing
+    // side while keeping the same mirrored timing.
     void Turn(int steps, int speed, int dir) {
         steps = std::min(std::max(steps, 1), 10);
 
         // Our order: [RF, RL, LL, LF]
-        // LEFT  (dir= 1): LL=30, RL= 0  → amp[1]=0,  amp[2]=30
-        // RIGHT (dir=-1): RL=30, LL= 0  → amp[1]=30, amp[2]=0
-        int amp[4] = {30, 0, 30, 30};   // LEFT: left leg swinging
-        if (dir == -1) {                 // RIGHT: right leg swinging
-            amp[1] = 30;
-            amp[2] = 0;
+        // LEFT  (dir= 1): use the previously right-turning hip swing
+        // RIGHT (dir=-1): use the previously left-turning hip swing
+        int amp[4] = {30, 30, 0, 30};   // LEFT: right leg swinging
+        float foot_phase = DEG2RAD(-90);
+        float phase_bias = DEG2RAD(-90);
+        if (dir == -1) {                 // RIGHT: left leg swinging
+            amp[1] = 0;
+            amp[2] = 30;
         }
 
         int offset[4] = {-5, 0, 0, 5};
         float phase[4] = {
-            DEG2RAD(-90),  // RF: foot (Otto original, foot presses at leg neutral)
+            foot_phase,    // RF: foot
             DEG2RAD(0),    // RL: leg
             DEG2RAD(0),    // LL: leg
-            DEG2RAD(-90),  // LF: foot (Otto original)
+            foot_phase,    // LF: foot
         };
 
         ESP_LOGI(TAG, "Turning %d steps, period=%dms, dir=%d", steps, speed, dir);
-        OttoOscillate(steps, speed, amp, offset, phase);
+        OttoOscillate(steps, speed, amp, offset, phase, phase_bias, true);
     }
 
     // Otto UpDown: A={0,0,h,h}, O={0,0,h,-h}, phase={0,0,-90°,90°}
@@ -324,13 +384,22 @@ private:
         const int kInterval = 10;
         int steps = time_ms / kInterval;
         if (steps < 1) steps = 1;
+        int start_pos[4];
         float inc[4];
-        for (int i = 0; i < 4; i++)
-            inc[i] = (float)(positions[i] - old_pos_[i]) / steps;
+        for (int i = 0; i < 4; i++) {
+            start_pos[i] = servos_[i].GetPosition();
+            old_pos_[i] = start_pos[i];
+            inc[i] = (float)(positions[i] - start_pos[i]) / steps;
+        }
 
         for (int s = 1; s <= steps; s++) {
-            for (int i = 0; i < 4; i++)
-                servos_[i].SetPosition(old_pos_[i] + (int)(s * inc[i]));
+            if (stop_requested_) {
+                Stand();
+                return;
+            }
+            for (int i = 0; i < 4; i++) {
+                servos_[i].SetPosition(start_pos[i] + (int)std::lround(s * inc[i]));
+            }
             vTaskDelay(pdMS_TO_TICKS(kInterval));
         }
         for (int i = 0; i < 4; i++) {
