@@ -6,10 +6,18 @@ void ServoController::MusicTask(void* arg) {
         auto codec = Board::GetInstance().GetAudioCodec();
         if (!codec) { music_playing_ = false; vTaskDelete(NULL); return; }
 
+        auto& app = Application::GetInstance();
+        app.BeginExclusiveAudioPlayback();
         codec->EnableOutput(true);
 
         HMP3Decoder decoder = MP3InitDecoder();
-        if (!decoder) { music_playing_ = false; vTaskDelete(NULL); return; }
+        if (!decoder) {
+            codec->EnableOutput(false);
+            app.EndExclusiveAudioPlayback();
+            music_playing_ = false;
+            vTaskDelete(NULL);
+            return;
+        }
 
         music_playing_ = true;
 
@@ -42,6 +50,7 @@ void ServoController::MusicTask(void* arg) {
 
         MP3FreeDecoder(decoder);
         codec->EnableOutput(false);
+        app.EndExclusiveAudioPlayback();
         music_playing_ = false;
         vTaskDelete(NULL);
     }

@@ -504,7 +504,7 @@ void Application::Start() {
     });
     protocol_->OnIncomingAudio([this](AudioStreamPacket&& packet) {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (device_state_ == kDeviceStateSpeaking && audio_decode_queue_.size() < MAX_AUDIO_PACKETS_IN_QUEUE) {
+        if (!music_mode_ && device_state_ == kDeviceStateSpeaking && audio_decode_queue_.size() < MAX_AUDIO_PACKETS_IN_QUEUE) {
             audio_decode_queue_.emplace_back(std::move(packet));
         }
     });
@@ -539,6 +539,9 @@ void Application::Start() {
             auto state = cJSON_GetObjectItem(root, "state");
             if (strcmp(state->valuestring, "start") == 0) {
                 Schedule([this]() {
+                    if (music_mode_) {
+                        return;
+                    }
                     aborted_ = false;
                     if (device_state_ == kDeviceStateIdle || device_state_ == kDeviceStateListening) {
                         SetDeviceState(kDeviceStateSpeaking);
@@ -546,6 +549,9 @@ void Application::Start() {
                 });
             } else if (strcmp(state->valuestring, "stop") == 0) {
                 Schedule([this]() {
+                    if (music_mode_) {
+                        return;
+                    }
                     background_task_->WaitForCompletion();
                     if (device_state_ == kDeviceStateSpeaking) {
                         if (listening_mode_ == kListeningModeManualStop) {
@@ -840,7 +846,7 @@ void Application::OnAudioOutput() {
         return;
     }
 
-    if (IsMusicPlaying()) {
+    if (music_mode_ || IsMusicPlaying()) {
         // Drain stale audio while music is playing
         std::lock_guard<std::mutex> lock(mutex_);
         audio_decode_queue_.clear();
@@ -915,6 +921,9 @@ void Application::OnAudioOutput() {
 }
 
 void Application::OnAudioInput() {
+    if (music_mode_) {
+        return;
+    }
     if (wake_word_->IsDetectionRunning()) {
         std::vector<int16_t> data;
         int samples = wake_word_->GetFeedSize();
@@ -1089,6 +1098,37 @@ void Application::SetHummingMode(bool enabled) {
     humming_mode_ = enabled;
     Settings settings("audio", true);
     settings.SetInt("humming_mode", enabled ? 1 : 0);
+}
+
+void Application::BeginExclusiveAudioPlayback() {
+    if (music_mode_.exchange(true)) {
+        return;
+    }
+
+    std::mutex ready_mutex;
+    std::condition_variable ready_cv;
+    bool ready = false;
+
+    Schedule([this, &ready_mutex, &ready_cv, &ready]() {
+        if (device_state_ == kDeviceStateSpeaking && protocol_) {
+            AbortSpeaking(kAbortReasonNone);
+        }
+        aborted_ = true;
+        SetDeviceState(kDeviceStateIdle);
+        ResetDecoder();
+        {
+            std::lock_guard<std::mutex> lock(ready_mutex);
+            ready = true;
+        }
+        ready_cv.notify_one();
+    });
+
+    std::unique_lock<std::mutex> lock(ready_mutex);
+    ready_cv.wait(lock, [&ready]() { return ready; });
+}
+
+void Application::EndExclusiveAudioPlayback() {
+    music_mode_ = false;
 }
 
 void Application::WriteAudio(std::vector<int16_t>& data, int sample_rate) {

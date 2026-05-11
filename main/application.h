@@ -7,6 +7,7 @@
 #include <esp_timer.h>
 
 #include <string>
+#include <atomic>
 #include <mutex>
 #include <list>
 #include <vector>
@@ -170,6 +171,8 @@ public:
     void SetHummingMode(bool enabled);
     bool GetHummingMode() const { return humming_mode_; }
     BackgroundTask* GetBackgroundTask() const { return background_task_; }
+    void BeginExclusiveAudioPlayback();
+    void EndExclusiveAudioPlayback();
 
 #if defined(CONFIG_VB6824_OTA_SUPPORT) && CONFIG_VB6824_OTA_SUPPORT == 1
     void ReleaseDecoder();
@@ -215,6 +218,7 @@ private:
     AecMode aec_mode_ = kAecOff;
 
     bool aborted_ = false;
+    std::atomic<bool> music_mode_{false};
     bool humming_mode_ = false;
     float hum_pitch_hz_ = 200.0f;
     float hum_phase_ = 0.0f;
