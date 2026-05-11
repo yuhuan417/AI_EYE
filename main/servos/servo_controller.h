@@ -5,6 +5,7 @@
 #include "mcp_server.h"
 #include "application.h"
 #include "board.h"
+#include "settings.h"
 
 #include <driver/ledc.h>
 #include <esp_log.h>
@@ -32,9 +33,16 @@ bool IsMusicPlaying();
 
 static const char* TAG = "ServoController";
 static std::atomic<bool> music_playing_{false};
-static const int kServoGpios[4] = {11, 12, 13, 14};
-static const ledc_channel_t kServoChannels[4] = {LEDC_CHANNEL_1, LEDC_CHANNEL_2, LEDC_CHANNEL_3, LEDC_CHANNEL_4};
-static const int kServoTrims[4] = {5, 0, 0, 10};
+static constexpr int kServoCount = 4;
+static const int kServoGpios[kServoCount] = {11, 12, 13, 14};
+static const ledc_channel_t kServoChannels[kServoCount] = {
+    LEDC_CHANNEL_1, LEDC_CHANNEL_2, LEDC_CHANNEL_3, LEDC_CHANNEL_4};
+static const int kDefaultServoTrims[kServoCount] = {5, 0, 0, 10};
+static const char* const kServoTrimKeys[kServoCount] = {
+    "trim_1", "trim_2", "trim_3", "trim_4"};
+static const char* const kServoNames[kServoCount] = {"RF", "RL", "LL", "LF"};
+static const char* const kServoCalibrationNamespace = "servo";
+static const char* const kServoCalibrationFlagKey = "has_calibration";
 
 class TrimmedServoDriver {
 public:
@@ -46,6 +54,13 @@ public:
 
     void Detach() {
         driver_.Detach();
+    }
+
+    void SetTrim(int trim) {
+        int physical_pos = GetPhysicalPosition();
+        trim_ = trim;
+        logical_pos_ = std::min(std::max(physical_pos - trim_, 0), 180);
+        driver_.SetPosition(logical_pos_ + trim_);
     }
 
     void SetPosition(int position) {
@@ -61,6 +76,14 @@ public:
         return logical_pos_;
     }
 
+    int GetTrim() const {
+        return trim_;
+    }
+
+    int GetPhysicalPosition() const {
+        return std::min(std::max(logical_pos_ + trim_, 0), 180);
+    }
+
 private:
     ServoDriver driver_;
     int trim_ = 0;
@@ -70,24 +93,29 @@ private:
 class ServoController {
 public:
     ServoController() {
-        for (int i = 0; i < 4; i++) {
-            servos_[i].Attach(kServoGpios[i], kServoChannels[i], kServoTrims[i]);
+        LoadServoCalibration();
+
+        for (int i = 0; i < kServoCount; i++) {
+            servos_[i].Attach(kServoGpios[i], kServoChannels[i], servo_trims_[i]);
             servos_[i].SetPosition(90);
             old_pos_[i] = 90;
         }
 
+        ESP_LOGI(TAG, "Servo calibration loaded: %s", FormatServoCalibration().c_str());
         RegisterMcpTools();
     }
 
     ~ServoController() {
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < kServoCount; i++) {
             servos_[i].Detach();
         }
     }
 
 private:
-    TrimmedServoDriver servos_[4];
-    int old_pos_[4];
+    TrimmedServoDriver servos_[kServoCount];
+    int servo_trims_[kServoCount] = {0};
+    int old_pos_[kServoCount];
+    bool servo_trims_loaded_from_nvs_ = false;
     std::atomic<bool> stop_requested_{false};
 
     bool ShouldStop() {
@@ -107,16 +135,86 @@ private:
     void PlaySingleLadies() ;
 
     void MoveServo(int servo_id, int angle) {
-        if (servo_id < 1 || servo_id > 4) return;
+        if (servo_id < 1 || servo_id > kServoCount) return;
         angle = std::min(std::max(angle, 0), 180);
         servos_[servo_id - 1].SetPosition(angle);
+        old_pos_[servo_id - 1] = angle;
     }
 
     void Stand() {
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < kServoCount; i++) {
             servos_[i].SetPosition(90);
             old_pos_[i] = 90;
         }
+    }
+
+    void LoadServoCalibration() {
+        servo_trims_loaded_from_nvs_ = false;
+        for (int i = 0; i < kServoCount; i++) {
+            servo_trims_[i] = kDefaultServoTrims[i];
+        }
+
+        Settings settings(kServoCalibrationNamespace, false);
+        if (settings.GetInt(kServoCalibrationFlagKey, 0) == 0) {
+            return;
+        }
+
+        servo_trims_loaded_from_nvs_ = true;
+        for (int i = 0; i < kServoCount; i++) {
+            servo_trims_[i] = settings.GetInt(kServoTrimKeys[i], kDefaultServoTrims[i]);
+        }
+    }
+
+    void SaveServoCalibration() {
+        Settings settings(kServoCalibrationNamespace, true);
+        settings.SetInt(kServoCalibrationFlagKey, 1);
+        for (int i = 0; i < kServoCount; i++) {
+            settings.SetInt(kServoTrimKeys[i], servo_trims_[i]);
+        }
+        servo_trims_loaded_from_nvs_ = true;
+    }
+
+    std::string FormatServoCalibration() const {
+        std::string result = "{\"source\":\"";
+        result += servo_trims_loaded_from_nvs_ ? "nvs" : "default";
+        result += "\",\"order\":[";
+        for (int i = 0; i < kServoCount; i++) {
+            if (i > 0) {
+                result += ",";
+            }
+            result += "\"";
+            result += kServoNames[i];
+            result += "\"";
+        }
+        result += "],\"trims\":[";
+        for (int i = 0; i < kServoCount; i++) {
+            if (i > 0) {
+                result += ",";
+            }
+            result += std::to_string(servo_trims_[i]);
+        }
+        result += "],\"neutral\":[";
+        for (int i = 0; i < kServoCount; i++) {
+            if (i > 0) {
+                result += ",";
+            }
+            result += std::to_string(90 + servo_trims_[i]);
+        }
+        result += "]}";
+        return result;
+    }
+
+    std::string SaveCurrentPoseAsNeutral() {
+        for (int i = 0; i < kServoCount; i++) {
+            servo_trims_[i] = servos_[i].GetPhysicalPosition() - 90;
+        }
+        for (int i = 0; i < kServoCount; i++) {
+            servos_[i].SetTrim(servo_trims_[i]);
+        }
+        SaveServoCalibration();
+        Stand();
+        ESP_LOGI(TAG, "Servo calibration saved: %s", FormatServoCalibration().c_str());
+        return FormatServoCalibration();
     }
 
     // Otto-style oscillation: sample the sine wave every 30ms, but interpolate
@@ -135,7 +233,7 @@ private:
         int positions[4];
 
         if (preload_to_start) {
-            for (int j = 0; j < 4; j++) {
+            for (int j = 0; j < kServoCount; j++) {
                 positions[j] =
                     90 + offset[j] + (int)std::lround(amp[j] * std::sin(phase_bias + phase[j]));
             }
@@ -150,7 +248,7 @@ private:
                 }
 
                 float p = phase_bias + i * dphase;
-                for (int j = 0; j < 4; j++) {
+                for (int j = 0; j < kServoCount; j++) {
                     positions[j] =
                         90 + offset[j] + (int)std::lround(amp[j] * std::sin(p + phase[j]));
                 }
@@ -189,21 +287,18 @@ private:
     // Otto LEFT  (dir= 1): LL=30, RL= 0  — left leg swings, pivots around right leg
     // Otto RIGHT (dir=-1): LL= 0, RL=30  — right leg swings, pivots around left leg
     //
-    // User-validated on this chassis: the practical left/right mapping is
-    // inverted relative to the nominal branch labels, so swap the hip-swing
-    // side while keeping the same mirrored timing.
     void Turn(int steps, int speed, int dir) {
         steps = std::min(std::max(steps, 1), 10);
 
         // Our order: [RF, RL, LL, LF]
-        // LEFT  (dir= 1): use the previously right-turning hip swing
-        // RIGHT (dir=-1): use the previously left-turning hip swing
-        int amp[4] = {30, 30, 0, 30};   // LEFT: right leg swinging
+        // LEFT  (dir= 1): left leg swinging
+        // RIGHT (dir=-1): right leg swinging
+        int amp[4] = {30, 0, 30, 30};   // LEFT: left leg swinging
         float foot_phase = DEG2RAD(-90);
         float phase_bias = DEG2RAD(-90);
-        if (dir == -1) {                 // RIGHT: left leg swinging
-            amp[1] = 0;
-            amp[2] = 30;
+        if (dir == -1) {                 // RIGHT: right leg swinging
+            amp[1] = 30;
+            amp[2] = 0;
         }
 
         int offset[4] = {-5, 0, 0, 5};
@@ -386,7 +481,7 @@ private:
         if (steps < 1) steps = 1;
         int start_pos[4];
         float inc[4];
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < kServoCount; i++) {
             start_pos[i] = servos_[i].GetPosition();
             old_pos_[i] = start_pos[i];
             inc[i] = (float)(positions[i] - start_pos[i]) / steps;
@@ -397,19 +492,19 @@ private:
                 Stand();
                 return;
             }
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < kServoCount; i++) {
                 servos_[i].SetPosition(start_pos[i] + (int)std::lround(s * inc[i]));
             }
             vTaskDelay(pdMS_TO_TICKS(kInterval));
         }
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < kServoCount; i++) {
             servos_[i].SetPosition(positions[i]);
             old_pos_[i] = positions[i];
         }
     }
 
     void ResetOldPositions() {
-        for (int i = 0; i < 4; i++) old_pos_[i] = 90;
+        for (int i = 0; i < kServoCount; i++) old_pos_[i] = 90;
     }
 
     // -- Smooth Criminal dance moves --
@@ -426,7 +521,7 @@ private:
     void KickRight(int tempo) ;
 
     void LateralFuerte(bool side, int tempo) {
-        for (int i = 0; i < 4; i++) servos_[i].SetPosition(90);
+        for (int i = 0; i < kServoCount; i++) servos_[i].SetPosition(90);
         if (side) servos_[0].SetPosition(40);
         else servos_[3].SetPosition(140);
         vTaskDelay(pdMS_TO_TICKS(tempo / 2));
@@ -519,6 +614,22 @@ private:
                     MoveServo(servo_id, angle);
                 });
                 return true;
+            });
+
+        mcp.AddTool(
+            "self.servo.get_calibration",
+            "Get the current servo neutral calibration. Returns trim offsets and the physical neutral angles for servos [RF, RL, LL, LF] / servo ids [1, 2, 3, 4].",
+            PropertyList(),
+            [this](const PropertyList&) -> ReturnValue {
+                return FormatServoCalibration();
+            });
+
+        mcp.AddTool(
+            "self.servo.save_current_as_neutral",
+            "Capture the current 4-servo pose as the new neutral standing pose, save it to NVS, and use it on future boots. Only call this when the robot is stationary and already positioned at the desired center pose.",
+            PropertyList(),
+            [this](const PropertyList&) -> ReturnValue {
+                return SaveCurrentPoseAsNeutral();
             });
 
         mcp.AddTool(
