@@ -584,7 +584,7 @@ private:
 
         mcp.AddTool(
             "self.servo.test",
-            "Test a single servo for identification. servo_id: 1-4, angle: 0-180 degrees.",
+            "测试单个舵机。ID: 1=右脚 2=右腿 3=左腿 4=左脚。脚上下翘，腿水平转。角度0-180，90=中立位。",
             PropertyList({
                 Property("servo_id", kPropertyTypeInteger, 1, 4),
                 Property("angle", kPropertyTypeInteger, 90, 0, 180),
@@ -601,7 +601,7 @@ private:
 
         mcp.AddTool(
             "self.servo.move",
-            "Move a single servo to a specified angle. servo_id: 1-4, angle: 0-180.",
+            "移动单个舵机到指定角度。舵机ID: 1=右脚 2=右腿 3=左腿 4=左脚。脚上下翘，腿水平转。左脚翘起用4号，右脚翘起用1号。角度0-180。",
             PropertyList({
                 Property("servo_id", kPropertyTypeInteger, 1, 4),
                 Property("angle", kPropertyTypeInteger, 90, 0, 180),
@@ -618,7 +618,7 @@ private:
 
         mcp.AddTool(
             "self.servo.get_calibration",
-            "Get the current servo neutral calibration. Returns trim offsets and the physical neutral angles for servos [RF, RL, LL, LF] / servo ids [1, 2, 3, 4].",
+            "查看当前舵机中立位校准数据。返回各舵机的微调偏移量和物理中立角度，顺序为[右脚,右腿,左腿,左脚]。",
             PropertyList(),
             [this](const PropertyList&) -> ReturnValue {
                 return FormatServoCalibration();
@@ -626,7 +626,7 @@ private:
 
         mcp.AddTool(
             "self.servo.save_current_as_neutral",
-            "Capture the current 4-servo pose as the new neutral standing pose, save it to NVS, and use it on future boots. Only call this when the robot is stationary and already positioned at the desired center pose.",
+            "将当前4个舵机的姿态保存为新的中立位，写入NVS存储，之后每次开机都使用这个中立位。仅在机器人静止且已摆好目标姿态时调用。",
             PropertyList(),
             [this](const PropertyList&) -> ReturnValue {
                 return SaveCurrentPoseAsNeutral();
@@ -634,7 +634,7 @@ private:
 
         mcp.AddTool(
             "self.servo.stand",
-            "Reset all servos to standing position (90 degrees).",
+            "立正：所有舵机回到中立站立姿态（全部90度）。",
             PropertyList(),
             [this](const PropertyList&) -> ReturnValue {
                 Application::GetInstance().Schedule([this]() {
@@ -645,7 +645,7 @@ private:
 
         mcp.AddTool(
             "self.servo.rest",
-            "Stand at ease: left foot (servo 4) rotates 30° to 120° for a relaxed pose.",
+            "稍息：左脚(4号舵机)翘起30度到120度，呈现稍息的放松站姿。",
             PropertyList(),
             [this](const PropertyList&) -> ReturnValue {
                 Application::GetInstance().Schedule([this]() {
@@ -658,7 +658,7 @@ private:
 
         mcp.AddTool(
             "self.servo.walk",
-            "Otto-style sinusoidal walk. steps: 1-10, speed: 200-2000ms per cycle (smaller=faster), direction: 1=forward, -1=backward.",
+            "正弦波步态行走。步数1-10，速度200-2000ms/周期（越小越快），方向1=前进 -1=后退。",
             PropertyList({
                 Property("steps", kPropertyTypeInteger, 2, 1, 10),
                 Property("speed", kPropertyTypeInteger, 800, 200, 2000),
@@ -674,7 +674,7 @@ private:
 
         mcp.AddTool(
             "self.servo.turn",
-            "Turn in place by driving one leg more than the other. steps: 1-10, speed: 200-2000ms, direction: 1=left, -1=right.",
+            "原地转身，一条腿摆动另一条腿当支点。步数1-10，速度200-2000ms，方向1=左转 -1=右转。",
             PropertyList({
                 Property("steps", kPropertyTypeInteger, 2, 1, 10),
                 Property("speed", kPropertyTypeInteger, 800, 200, 2000),
@@ -690,7 +690,7 @@ private:
 
         mcp.AddTool(
             "self.servo.turn_around",
-            "Turn 180 degrees around (two consecutive right turns). steps: 1-10, speed: 200-2000ms.",
+            "180度转身（连续两次右转）。步数1-10，速度200-2000ms。",
             PropertyList({
                 Property("steps", kPropertyTypeInteger, 2, 1, 10),
                 Property("speed", kPropertyTypeInteger, 800, 200, 2000),
@@ -706,7 +706,7 @@ private:
 
         mcp.AddTool(
             "self.servo.bounce",
-            "Bounce up and down (feet 180° out of phase, legs still). steps: 1-10, speed: 200-2000ms, height: 5-30.",
+            "上下弹跳（双脚180度反向摆动，腿不动）。步数1-10，速度200-2000ms，高度5-30。",
             PropertyList({
                 Property("steps", kPropertyTypeInteger, 2, 1, 10),
                 Property("speed", kPropertyTypeInteger, 800, 200, 2000),
@@ -722,7 +722,7 @@ private:
 
         mcp.AddTool(
             "self.servo.sway",
-            "Side-to-side sway (feet in phase, legs still). steps: 1-10, speed: 200-2000ms, height: 5-30.",
+            "左右摇摆（双脚同相摆动，腿不动）。步数1-10，速度200-2000ms，幅度5-30。",
             PropertyList({
                 Property("steps", kPropertyTypeInteger, 2, 1, 10),
                 Property("speed", kPropertyTypeInteger, 800, 200, 2000),
@@ -738,7 +738,7 @@ private:
 
         mcp.AddTool(
             "self.servo.tiptoe",
-            "Tiptoe side-to-side swing (heels stay up). steps: 1-10, speed: 200-2000ms, height: 5-30.",
+            "踮脚左右摇摆（脚跟保持抬起）。步数1-10，速度200-2000ms，幅度5-30。",
             PropertyList({
                 Property("steps", kPropertyTypeInteger, 2, 1, 10),
                 Property("speed", kPropertyTypeInteger, 800, 200, 2000),
@@ -756,7 +756,7 @@ private:
 
         mcp.AddTool(
             "self.servo.shake",
-            "Shake legs rapidly (legs 180° out of phase, feet still). steps: 1-10, speed: 200-2000ms, height: 5-25.",
+            "快速抖腿（双腿180度反向摆动，脚不动）。步数1-10，速度200-2000ms，幅度5-25。",
             PropertyList({
                 Property("steps", kPropertyTypeInteger, 2, 1, 10),
                 Property("speed", kPropertyTypeInteger, 800, 200, 2000),
@@ -774,7 +774,7 @@ private:
 
         mcp.AddTool(
             "self.servo.moonwalk",
-            "Moonwalk slide (feet-only traveling wave). steps: 1-10, speed: 200-2000ms, height: 5-30, direction: 1=left, -1=right.",
+            "太空步侧滑（仅双脚行波运动）。步数1-10，速度200-2000ms，幅度5-30，方向1=左滑 -1=右滑。",
             PropertyList({
                 Property("steps", kPropertyTypeInteger, 2, 1, 10),
                 Property("speed", kPropertyTypeInteger, 800, 200, 2000),
@@ -792,7 +792,7 @@ private:
 
         mcp.AddTool(
             "self.servo.crusaito",
-            "Cross-step sideways walk like a crab (all 4 servos moving together). steps: 1-10, speed: 200-2000ms, height: 5-30, direction: 1=forward, -1=backward.",
+            "螃蟹步横移（4个舵机协调运动）。步数1-10，速度200-2000ms，幅度5-30，方向1=前进 -1=后退。",
             PropertyList({
                 Property("steps", kPropertyTypeInteger, 2, 1, 10),
                 Property("speed", kPropertyTypeInteger, 800, 200, 2000),
@@ -810,7 +810,7 @@ private:
 
         mcp.AddTool(
             "self.servo.flap",
-            "Flapping motion (legs 180° out of phase like wings, feet counter-phase). steps: 1-10, speed: 200-2000ms, height: 5-30, direction: 1=forward, -1=backward.",
+            "扑翼步态（双腿如翅膀180度反向摆动，脚反相配合）。步数1-10，速度200-2000ms，幅度5-30，方向1=前进 -1=后退。",
             PropertyList({
                 Property("steps", kPropertyTypeInteger, 2, 1, 10),
                 Property("speed", kPropertyTypeInteger, 800, 200, 2000),
@@ -828,7 +828,7 @@ private:
 
         mcp.AddTool(
             "self.servo.ascend",
-            "Compact wiggling turn (all 4 servos oscillate in small range, bot twists in place). steps: 1-10, speed: 200-2000ms, height: 5-13.",
+            "原地小幅度扭动转身（4舵机同时小幅摆动）。步数1-10，速度200-2000ms，幅度5-13。",
             PropertyList({
                 Property("steps", kPropertyTypeInteger, 2, 1, 10),
                 Property("speed", kPropertyTypeInteger, 800, 200, 2000),
@@ -846,7 +846,7 @@ private:
 
         mcp.AddTool(
             "self.servo.stop",
-            "Immediately stop any running servo motion or dance. Use this when the user asks to stop, halt, or interrupt the current action.",
+            "立即停止当前所有舵机动作或舞蹈。当用户说停、停下、别动时调用。",
             PropertyList(),
             [this](const PropertyList&) -> ReturnValue {
                 stop_requested_ = true;
@@ -855,7 +855,7 @@ private:
 
         mcp.AddTool(
             "self.servo.dance_smooth_criminal",
-            "Perform the full Smooth Criminal dance by Michael Jackson. A 60-second choreographed robot dance sequence. Use this when the user asks for a dance, wants to show off, or mentions Smooth Criminal.",
+            "表演迈克尔·杰克逊的Smooth Criminal完整舞蹈，约60秒的机器人编舞。当用户说跳舞、展示才艺、或提到Smooth Criminal时调用。",
             PropertyList(),
             [this](const PropertyList&) -> ReturnValue {
                 DispatchAction([this]() { SmoothCriminal(); });
@@ -864,7 +864,7 @@ private:
 
         mcp.AddTool(
             "self.servo.dance_single_ladies",
-            "Perform the full Single Ladies dance by Beyonce. A 3-minute choreographed robot dance sequence. Use this when the user asks for Beyonce, Single Ladies, or wants a different dance.",
+            "表演碧昂丝的Single Ladies完整舞蹈，约3分钟的机器人编舞。当用户提到Beyonce、Single Ladies、或想换个舞时调用。",
             PropertyList(),
             [this](const PropertyList&) -> ReturnValue {
                 DispatchAction([this]() { SingleLadies(); });
